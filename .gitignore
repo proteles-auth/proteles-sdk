@@ -1,0 +1,28 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.next/
+.env*.local
+.ssr/
+.svelte-kit/
+.nuxt/
+.output/
+.vinxi/
+
+# SwiftPM and Xcode build output (Package.swift is at the root).
+.build/
+.swiftpm/
+/DerivedData/
+*.xcuserstate
+
+# macOS Finder metadata.
+.DS_Store
+
+# Example lockfiles: the examples link the packages via `file:`, so a lockfile
+# adds churn and pins only the framework around them.
+examples/*/package-lock.json
+# Except where the integration tests install the example
+# (scripts/verify-quickstart.mjs): there the framework is what is under test,
+# and it installs with `npm ci` so that a registry release cannot change it
+# between two runs of the same commit.
+!examples/nextjs-quickstart/package-lock.json

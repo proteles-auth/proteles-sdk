@@ -1,0 +1,46 @@
+{
+  "name": "@proteles/js",
+  "version": "0.3.0",
+  "description": "Framework-agnostic OAuth2/OIDC client core (PKCE, code exchange, refresh rotation, revoke, userinfo) for the Proteles identity platform. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/js"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/js#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "pkce",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

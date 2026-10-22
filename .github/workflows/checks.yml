@@ -1,0 +1,239 @@
+# The checks, written once: the TypeScript packages (`sdk`) and the native SDKs
+# on their own platforms (`mobile-ios`, `mobile-android`). Nothing triggers this
+# file by itself; three workflows call it:
+#
+#   ci.yml              every pull request, every push to main, and nightly: all three
+#   release-npm.yml     `sdk`, on an npm-vX.Y.Z tag, before anything is packed
+#   release-mobile.yml  the mobile job(s) for the platforms being released, on an X.Y.Z tag
+#
+# So a release runs exactly the checks a merge ran, on the tagged commit, and
+# the two cannot drift apart: there is no second copy to forget.
+#
+# Nothing here reads a secret, and the token is read-only. Every job runs on
+# GitHub-hosted runners.
+
+name: checks
+
+on:
+  workflow_call:
+    inputs:
+      sdk:
+        description: Run the TypeScript packages' job.
+        type: boolean
+        default: false
+      mobile-ios:
+        description: Run the iOS SDK's job (macOS).
+        type: boolean
+        default: false
+      mobile-android:
+        description: Run the Android SDK's job.
+        type: boolean
+        default: false
+      cache:
+        description: >-
+          Restore and save the npm and Gradle download caches. On for ci.yml;
+          off for the release workflows, which build what they publish from a
+          clean download rather than from a cache another workflow wrote.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # The Node that builds, tests, packs and publishes the packages. Each job that
+  # sets up Node asserts that this is the one it got.
+  NODE_PIN: "26"
+
+jobs:
+  sdk:
+    if: inputs.sdk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_PIN }}
+          cache: ${{ inputs.cache && 'npm' || '' }}
+          package-manager-cache: false
+
+      # The pin is only worth something if it is honoured: assert it, rather
+      # than trust that a floating major resolved to what it says.
+      - name: Node is the pinned major
+        run: |
+          node --version
+          npm --version
+          case "$(node --version)" in
+            "v${NODE_PIN}".*) ;;
+            *) echo "::error::asked for Node ${NODE_PIN} and got $(node --version)"; exit 1 ;;
+          esac
+
+      # `ci`, never `install`: it installs the lockfile rather than resolving
+      # afresh, so this tests the dependency tree a developer has.
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      # Before typecheck: each package points `types` at its dist/, which a
+      # fresh checkout does not have, so one workspace cannot resolve another's
+      # types until they are built. The root script builds js, then bff, then
+      # the rest (`npm run build --workspaces` would go alphabetically and build
+      # bff before the js it imports).
+      - name: npm run build
+        run: npm run build
+
+      # A workspace that exits 0 without emitting must not reach typecheck,
+      # where it would come back as unresolved types belonging to whichever
+      # package imported it rather than as the empty build it is.
+      - name: Every package built a dist/
+        run: |
+          n=0
+          for d in packages/*/; do
+            n=$((n + 1))
+            [ -d "${d}dist" ] || { echo "::error::${d} built without producing dist/"; exit 1; }
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no packages under packages/"; exit 1; }
+          echo "all $n packages have a dist/"
+
+      - name: npm run typecheck
+        run: npm run typecheck
+
+      # Every package's tests, then test:scripts, test:vectors and test:tools
+      # (package.json). The steps after this repeat three of those as steps of
+      # their own, so a failure names itself in the job's summary.
+      - name: npm test
+        run: npm test
+
+      # packages/management/src/generated/ is generated from spec/openapi.json,
+      # the server's spec at the commit in spec/SERVER_COMMIT.
+      - name: Generated management types match spec/openapi.json
+        run: |
+          echo "spec/openapi.json is the server's at $(cat spec/SERVER_COMMIT)"
+          node tools/generate-management-wire.mjs --check
+          node tools/generate-management-enums.mjs --check
+
+      # vectors.json is a copy (mobile/vectors/SOURCE.md); this is the copy's
+      # checksum, by coreutils rather than by the test suites that also check it.
+      - name: mobile/vectors/vectors.json matches SHA256SUMS
+        working-directory: mobile/vectors
+        run: sha256sum -c SHA256SUMS
+
+      - name: Publish-readiness rules, each seen to fail
+        run: node tools/npm-publish-readiness-test.mjs
+
+      # Not part of `npm test`: the packaging every npm release depends on,
+      # including that every package is in release-npm.yml's publish list and
+      # in RELEASING.md's.
+      - name: Publish readiness
+        run: node tools/npm-publish-readiness.mjs
+
+  mobile-ios:
+    if: inputs.mobile-ios
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+
+      # The package is Package.swift at the repository root. swift-test.sh is
+      # plain `swift build` / `swift test` under a full Xcode, as here; it adds
+      # workarounds only on a Command Line Tools install (see its header).
+      # Release, the configuration an app's Release build compiles the package in.
+      - name: swift build -c release
+        run: mobile/ios/scripts/swift-test.sh build -c release
+
+      # Every shared ID-token vector through the iOS verifier, and the suite.
+      # The live tests skip: they need a server (mobile/live/README.md).
+      - name: swift test
+        run: mobile/ios/scripts/swift-test.sh
+
+      # ProtelesAuth compiled for the iOS simulator and a device, and the example
+      # app type-checked against it.
+      - name: iOS build check
+        run: |
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          mobile/ios/scripts/ios-build-check.sh
+
+  mobile-android:
+    if: inputs.mobile-android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: ${{ inputs.cache && 'gradle' || '' }}
+          cache-dependency-path: |
+            mobile/android/**/*.gradle.kts
+            mobile/android/gradle/libs.versions.toml
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+
+      # The readiness check and the release check are Node scripts.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_PIN }}
+          package-manager-cache: false
+
+      # gradlew runs gradle-wrapper.jar, a binary nobody reviews in a diff. It
+      # must be the jar Gradle publishes for the version the wrapper names (the
+      # distribution it downloads is checked against distributionSha256Sum).
+      - name: gradle-wrapper.jar is Gradle's own
+        working-directory: mobile/android/gradle/wrapper
+        run: |
+          url="$(sed -n 's/^distributionUrl=//p' gradle-wrapper.properties | sed 's/\\:/:/g')"
+          version="$(printf '%s\n' "$url" | sed -n 's#.*/gradle-\(.*\)-\(bin\|all\)\.zip$#\1#p')"
+          [ -n "$version" ] || { echo "::error::cannot read a Gradle version from distributionUrl=$url"; exit 1; }
+          want="$(curl -fsSL --retry 3 "https://services.gradle.org/distributions/gradle-${version}-wrapper.jar.sha256")"
+          have="$(sha256sum gradle-wrapper.jar | cut -d' ' -f1)"
+          echo "Gradle ${version}: published ${want}, committed ${have}"
+          [ "$want" = "$have" ] || { echo "::error::gradle-wrapper.jar is not Gradle ${version}'s wrapper"; exit 1; }
+
+      # compileSdk = 37 in mobile/android/{android,example}/build.gradle.kts,
+      # whose SDK package is platforms;android-37.0, with build-tools 36.0.0
+      # (gradle/libs.versions.toml). Installed before Gradle starts: the
+      # :android tests read the platform's api-versions.xml, found when the
+      # build is configured.
+      - name: Android SDK platform
+        run: |
+          sdkmanager="${ANDROID_HOME:?the runner image sets ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          (yes || true) | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
+          ls "$ANDROID_HOME/platforms"
+
+      # The JVM core's suite (every shared ID-token vector included), the
+      # library's unit tests, and a release build of the library.
+      - name: Gradle tests and release build
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon --console=plain :core:test :android:testDebugUnitTest :android:assembleRelease
+
+      # The Maven publication a release sends to Central, checked file by file:
+      # its rules first, each against a fixture that breaks it; then published
+      # unsigned (no signature at all) and signed with a throwaway key made for
+      # the run in a temporary GNUPGHOME. No secret is involved.
+      - name: Maven publication rules, each seen to fail
+        run: node mobile/android/scripts/publish-readiness.mjs --self-test
+      - name: Maven publication readiness
+        run: node mobile/android/scripts/publish-readiness.mjs
+
+      # The release script (mobile/scripts/release.sh) against a stub Central on
+      # loopback: every refusal before anything builds, the idempotent skip, and
+      # each answer Central can give. It passes the script only PATH, HOME and
+      # TMPDIR, so nothing of this job's environment reaches it.
+      - name: Release script against a stub Central
+        run: node mobile/scripts/release-check.mjs

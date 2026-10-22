@@ -1,0 +1,61 @@
+{
+  "name": "@proteles/vue",
+  "version": "0.3.0",
+  "description": "Vue 3 composables and components for Proteles authentication, plus Nuxt/h3 server handlers. Tokens never reach the browser. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/vue"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/vue#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/bff": "^0.3.0"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "devDependencies": {
+    "@vue/server-renderer": "^3.5.0",
+    "vue": "^3.5.0"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "vue",
+    "nuxt",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

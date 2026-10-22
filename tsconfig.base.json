@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "declaration": true,
+    // Maps on, and every one of them resolves. tsc writes each .js.map and
+    // .d.ts.map with `"sources": ["../src/<file>.ts"]` and no `sourcesContent`,
+    // so a map is only worth shipping if the file it names ships too: every
+    // package lists "src" in its `files`, and the published tarball holds
+    // `dist/x.js`, `dist/x.js.map` and the `src/x.ts` the map points at. A
+    // debugger then steps through the TypeScript, and an editor's "go to
+    // definition" lands in `src/` rather than in a `.d.ts`.
+    //
+    // They were off while this code lived in a private repository: the only
+    // ways to make a map resolve were to publish `src/` or to set
+    // `inlineSources`, both of which publish the TypeScript, so the maps went
+    // out dangling or not at all. The source is public now (this repository),
+    // so shipping it discloses nothing. `src/` beats `inlineSources`, which
+    // would embed the same text twice, once in the .js.map and again in the
+    // .d.ts.map.
+    //
+    // Three packages differ. @proteles/solid emits its JavaScript through Babel
+    // and only its types through tsc, so it ships .d.ts.map files and no
+    // .js.map. @proteles/svelte builds with svelte-package, which strips the
+    // types from each .ts without a .js.map and writes a .d.ts.map per
+    // declaration; the components' maps name an intermediate file svelte2tsx
+    // never writes out, so its build removes those
+    // (packages/svelte/scripts/drop-component-dts-maps.mjs). @proteles/alpine's
+    // standalone browser bundle is built by esbuild, whose map embeds
+    // `sourcesContent`.
+    //
+    // Nothing local depends on them: tests run through tsx against the
+    // TypeScript directly, and `typecheck` is --noEmit.
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true
+  }
+}

@@ -1,0 +1,12 @@
+# Build output and caches. The repository root's .gitignore knows nothing of
+# Gradle, so without these a `git add .` after a build would stage every class file.
+build/
+.gradle/
+.kotlin/
+# Machine-specific: sdk.dir points at one person's Android SDK.
+local.properties
+# IDE state
+.idea/
+*.iml
+captures/
+.cxx/

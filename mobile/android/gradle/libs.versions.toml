@@ -1,0 +1,37 @@
+# Pinned, because "whatever is newest" is not a build anybody can reproduce.
+#
+# AGP 9.3.2 + Gradle 9.7.1 + Kotlin 2.4.20 is the combination already proven on
+# this toolchain (JDK 17, platform android-37.0, build-tools 36.0.0); AGP 9
+# compiles Kotlin itself, so the Android modules apply no Kotlin plugin.
+[versions]
+agp = "9.3.2"
+kotlin = "2.4.20"
+coroutines = "1.10.2"
+browser = "1.9.0"
+junit4 = "4.13.2"
+junitJupiter = "5.13.4"
+androidxTestRunner = "1.7.0"
+androidxTestCore = "1.7.0"
+androidxTestJunit = "1.3.0"
+
+[libraries]
+# Runtime: the only third-party runtime dependency of :core (see README "Dependencies").
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+# The example app only: Dispatchers.Main.
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+# Runtime of :android: Custom Tabs.
+androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+# Test classpaths only.
+junit-bom = { group = "org.junit", name = "junit-bom", version.ref = "junitJupiter" }
+junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter" }
+junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher" }
+junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
+# On-device (androidTest) only.
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

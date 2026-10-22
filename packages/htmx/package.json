@@ -1,0 +1,50 @@
+{
+  "name": "@proteles/htmx",
+  "version": "0.3.0",
+  "description": "htmx server helpers for Proteles authentication: HX-Redirect-aware login flows, route guards, and fragment guards. Server-only — htmx needs no client-side auth script. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/htmx"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/htmx#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/bff": "^0.3.0"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "htmx",
+    "hypermedia",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

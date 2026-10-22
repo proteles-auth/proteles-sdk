@@ -1,0 +1,23 @@
+{
+  "name": "proteles-nuxt-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal Nuxt app showing Proteles auth in ~5 minutes with @proteles/vue.",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "start": "node --env-file=.env .output/server/index.mjs"
+  },
+  "dependencies": {
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/js": "file:../../packages/js",
+    "@proteles/vue": "file:../../packages/vue",
+    "nuxt": "^3.13.0",
+    "vue": "^3.5.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}

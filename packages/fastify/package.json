@@ -1,0 +1,61 @@
+{
+  "name": "@proteles/fastify",
+  "version": "0.3.0",
+  "description": "Fastify plugin for the Proteles Backend-for-Frontend: registers /api/auth/*, adds a preHandler guard, and decorates the request with the session over @proteles/bff. Tokens never reach the browser. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/fastify"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/fastify#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/bff": "^0.3.0"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "fastify",
+    "bff",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "fastify": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "fastify": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "fastify": "^5.12.5"
+  }
+}

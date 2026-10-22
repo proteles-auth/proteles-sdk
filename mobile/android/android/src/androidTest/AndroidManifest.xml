@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The Activity a sign-in is started from. -->
+        <activity
+            android:name="com.proteles.auth.android.TestHostActivity"
+            android:exported="false" />
+
+        <!-- Declared exactly as the README tells an app to declare it. -->
+        <activity
+            android:name="com.proteles.auth.android.RedirectActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="redirect.proteles.test" />
+            </intent-filter>
+            <!--
+                A filter WITHOUT category DEFAULT: a browser's implicit startActivity
+                can never reach it, so the SDK must refuse this host up front
+                (RedirectActivity.checkDeclared, OnDeviceTest).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="nodefault.proteles.test" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

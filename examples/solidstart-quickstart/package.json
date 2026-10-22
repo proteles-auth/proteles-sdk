@@ -1,0 +1,24 @@
+{
+  "name": "proteles-solidstart-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal SolidStart app showing Proteles auth in ~5 minutes with @proteles/solid.",
+  "type": "module",
+  "scripts": {
+    "dev": "vinxi dev",
+    "build": "vinxi build",
+    "start": "node --env-file=.env .output/server/index.mjs"
+  },
+  "dependencies": {
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/js": "file:../../packages/js",
+    "@proteles/solid": "file:../../packages/solid",
+    "@solidjs/router": "^0.15.0",
+    "@solidjs/start": "^1.0.0",
+    "solid-js": "^1.9.0",
+    "vinxi": "^0.5.7"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}

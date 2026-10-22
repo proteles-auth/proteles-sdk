@@ -1,0 +1,36 @@
+// The verification scripts are plain `.mjs`, and until this file existed nothing
+// checked them at all: the workspace `typecheck` iterates `packages/*/`, and
+// there is no linter. Two bugs shipped in `verify-alpine-ajax.mjs` because of
+// it — a header set under a condition naming an option the helper did not have,
+// and a call passing the wrong argument in the wrong position. Both are things a
+// typechecker says out loud.
+//
+// Deliberately NOT extending `tsconfig.base.json`, whose `strict` and
+// `noUncheckedIndexedAccess` these files would not survive: they index
+// `res.headers["set-cookie"]` and destructure JSON bodies constantly, and
+// annotating all of that would be a large diff buying nothing. The two defects
+// this gate exists for are both caught without strict mode — one is
+// "cannot find name", the other an argument that fits no parameter — so the
+// setting is chosen to catch that class rather than to score well.
+//
+// The flags below must stay in step with `npm run typecheck:scripts`, which is
+// what CI actually runs.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // DOM for the same reason `tsconfig.base.json` carries it: these scripts use
+    // `fetch`, `Response` and `URL`. Dropping it costs ~20 phantom errors about
+    // globals that Node has had for years.
+    "lib": ["ES2022", "DOM"],
+    // The point of the file. `checkJs` without `allowJs` checks nothing.
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    // These import from `../packages/*/dist`, which is built before this runs.
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["*.mjs"]
+}

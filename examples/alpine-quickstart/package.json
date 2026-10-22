@@ -1,0 +1,18 @@
+{
+  "name": "proteles-alpine-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A no-build Alpine.js page with Proteles auth, served by a ~40-line Node BFF.",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.mjs"
+  },
+  "dependencies": {
+    "@proteles/alpine": "file:../../packages/alpine",
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/js": "file:../../packages/js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  }
+}

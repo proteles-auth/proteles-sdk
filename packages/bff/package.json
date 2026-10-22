@@ -1,0 +1,49 @@
+{
+  "name": "@proteles/bff",
+  "version": "0.3.0",
+  "description": "Framework-agnostic Backend-for-Frontend core for Proteles: encrypted httpOnly session cookies and the login/callback/logout/me flow over Web Request/Response. Used by @proteles/next and @proteles/svelte. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/bff"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/bff#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/js": "^0.3.0"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "bff",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

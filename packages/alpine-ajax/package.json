@@ -1,0 +1,52 @@
+{
+  "name": "@proteles/alpine-ajax",
+  "version": "0.3.0",
+  "description": "Alpine AJAX server helpers for Proteles authentication: target-aware sign-in prompts, route guards and session helpers. Server-only — Alpine AJAX needs no client-side auth script. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/alpine-ajax"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/alpine-ajax#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/bff": "^0.3.0"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "alpine",
+    "alpine-ajax",
+    "alpinejs",
+    "hypermedia",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

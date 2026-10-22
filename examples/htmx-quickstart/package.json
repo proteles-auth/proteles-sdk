@@ -1,0 +1,18 @@
+{
+  "name": "proteles-htmx-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A no-build htmx app with Proteles auth: the server renders auth-aware fragments.",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.mjs"
+  },
+  "dependencies": {
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/htmx": "file:../../packages/htmx",
+    "@proteles/js": "file:../../packages/js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  }
+}

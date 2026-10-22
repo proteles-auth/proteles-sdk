@@ -1,0 +1,26 @@
+{
+  "name": "@proteles/sdk-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Proteles SDKs: the @proteles/* TypeScript packages (npm workspaces under packages/), and the native iOS and Android SDKs under mobile/.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @proteles/js && npm run build -w @proteles/bff && sh -euc 'for p in packages/*/; do npm run build --if-present -w \"$p\" || exit 1; done'",
+    "test": "sh -euc 'for p in packages/*/; do npm run test --if-present -w \"$p\" || exit 1; done' && npm run test:scripts && npm run test:vectors && npm run test:tools",
+    "test:scripts": "node scripts/verify-quickstart.mjs --self-test",
+    "test:vectors": "node mobile/vectors/reference-verify.mjs",
+    "test:tools": "node tools/generate-management-wire.mjs --self-test && node tools/generate-management-enums.mjs --self-test && node tools/generate-management-wire.mjs --check && node tools/generate-management-enums.mjs --check && node tools/npm-publish-readiness-test.mjs",
+    "typecheck": "sh -euc 'for p in packages/*/; do npm run typecheck --if-present -w \"$p\" || exit 1; done' && npm run typecheck:scripts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.12"
+  }
+}

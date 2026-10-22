@@ -1,0 +1,17 @@
+{
+  // The test suite was never typechecked.
+  //
+  // `tsconfig.json` includes only `src`, and `tsx --test` runs on esbuild,
+  // which strips types without checking them. So the largest file in the
+  // package had decorative annotations: its fixtures were untyped object
+  // literals tsc never compared against a wire type, and its one
+  // `@ts-expect-error` could not fire. A suite of self-consistent fixtures
+  // stays green no matter how far the types move — which is exactly the signal
+  // a type refactor needs and the one place it was missing.
+  //
+  // Separate from the build config rather than folded into it, because `build`
+  // emits and the tests must not land in `dist/`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "rootDir": ".", "allowImportingTsExtensions": true },
+  "include": ["src", "test"]
+}

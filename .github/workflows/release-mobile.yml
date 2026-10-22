@@ -1,0 +1,188 @@
+# Releases the native SDKs from a plain `X.Y.Z` tag (no `v`: see RELEASING.md).
+# RELEASING.md is the runbook; mobile/scripts/release.sh is what it runs.
+#
+#   iOS      nothing is published. Package.swift is at the repository root, so
+#            SwiftPM resolves `.package(url:from:)` from this repository's tags:
+#            the tag that started this run is the release. This workflow runs
+#            the iOS checks on it, so a tag that does not build is known at once.
+#   Android  com.proteles:proteles-auth-core and proteles-auth-android, signed,
+#            to Maven Central through the Central Portal's publisher API, in the
+#            `mobile-release` environment after a reviewer approves. With the
+#            default USER_MANAGED publishing type the upload stops at VALIDATED,
+#            and nothing is public until someone presses Publish in the Portal.
+#
+# Started by hand (workflow_dispatch), on a tag chosen under "Use workflow from",
+# it can test and release one platform: `android` to release Android alone or
+# to finish a release that failed part-way (whatever is already on Central is
+# skipped), `ios` to re-run the iOS checks on a tag.
+#
+# The signing key and the Central token are secrets of the `mobile-release`
+# environment, so no other job, and no job of any other workflow, receives them.
+
+name: release-mobile
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Which native SDKs to test and release, from the tag chosen above
+        type: choice
+        options:
+          - both
+          - android
+          - ios
+        default: both
+
+permissions:
+  contents: read
+
+# One release at a time, never cancelled part-way: two runs of one version
+# would each ask Central whether it is out yet, each be told no, and each upload.
+concurrency:
+  group: release-mobile
+  cancel-in-progress: false
+
+jobs:
+  # Refuses before anything builds: a ref that is not an X.Y.Z tag, a tag that is
+  # not VERSION_NAME, an unknown platform. release.sh checks the tag again.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.plan.outputs.android }}
+      ios: ${{ steps.plan.outputs.ios }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: plan
+        name: The tag names VERSION_NAME
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'both' }}
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) ;;
+            *) echo "::error::$GITHUB_REF is not a tag. Start this workflow on a release tag (Use workflow from > Tags)."; exit 1 ;;
+          esac
+          if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$GITHUB_REF_NAME is not a native release tag: a plain MAJOR.MINOR.PATCH, with no v, npm-v or mobile-v"
+            exit 1
+          fi
+          have="$(sed -n 's/^VERSION_NAME=//p' mobile/android/gradle.properties | tail -1)"
+          if [ "$GITHUB_REF_NAME" != "$have" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but VERSION_NAME in mobile/android/gradle.properties is ${have:-unset}. Bump it and re-tag, or tag $have."
+            exit 1
+          fi
+          case "$PLATFORMS" in
+            both) android=true ios=true ;;
+            android) android=true ios=false ;;
+            ios) android=false ios=true ;;
+            *) echo "::error::unknown platforms '$PLATFORMS' (both, android or ios)"; exit 1 ;;
+          esac
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "tag $GITHUB_REF_NAME ($GITHUB_SHA) matches VERSION_NAME; android=$android ios=$ios"
+
+  # The same jobs as every pull request runs (checks.yml), for the platforms
+  # being released, on the tagged commit. No cache, and no secret.
+  test:
+    needs: plan
+    uses: ./.github/workflows/checks.yml
+    with:
+      mobile-ios: ${{ needs.plan.outputs.ios == 'true' }}
+      mobile-android: ${{ needs.plan.outputs.android == 'true' }}
+
+  # Only after every selected platform's checks passed: one version is one
+  # source, so an iOS failure on the tag stops Android too.
+  android:
+    needs: [plan, test]
+    if: needs.plan.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # The approval gate, and the only place the release secrets exist. Its
+    # required reviewers, and the rule that only release tags may deploy to
+    # it, are set in the repository's settings (RELEASING.md).
+    environment: mobile-release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          package-manager-cache: false
+
+      # As in checks.yml: compileSdk 37 is platforms;android-37.0.
+      - name: Android SDK platform
+        run: |
+          sdkmanager="${ANDROID_HOME:?the runner image sets ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          (yes || true) | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
+
+      # The approval can come long after the tag was pushed. A tag deleted and
+      # pushed again elsewhere in the meantime starts a run of its own; this
+      # one must not release the commit the tag no longer names.
+      - name: The tag still names this run's commit
+        run: |
+          remote="$(git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/tags/$GITHUB_REF_NAME" "refs/tags/$GITHUB_REF_NAME^{}")"
+          commit="$(printf '%s\n' "$remote" | awk '$2 ~ /\^\{\}$/ { print $1 }')"
+          [ -n "$commit" ] || commit="$(printf '%s\n' "$remote" | awk 'NR == 1 { print $1 }')"
+          [ "$commit" = "$GITHUB_SHA" ] ||
+            { echo "::error::$GITHUB_REF_NAME now names ${commit:-nothing}, not $GITHUB_SHA, the commit this run tested"; exit 1; }
+          echo "$GITHUB_REF_NAME names $GITHUB_SHA"
+
+      # release.sh refuses before it builds: the tag against VERSION_NAME, every
+      # variable missing (named at once), a key that is not an armoured secret
+      # key, a placeholder left in gradle.properties. Then it skips what Central
+      # already has, or builds, signs, checks and uploads, and waits for
+      # validation. It takes the key as a file: written here, readable by this
+      # user only, and removed when the step ends however it ends.
+      - name: Release to Maven Central
+        env:
+          SIGNING_KEY_ARMORED: ${{ secrets.MOBILE_SIGNING_KEY }}
+          MOBILE_SIGNING_KEY_PASSWORD: ${{ secrets.MOBILE_SIGNING_KEY_PASSWORD }}
+          CENTRAL_PORTAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_TOKEN_USERNAME }}
+          CENTRAL_PORTAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN_PASSWORD }}
+        run: |
+          umask 077
+          key_dir="$(mktemp -d "$RUNNER_TEMP/signing.XXXXXX")"
+          trap 'rm -rf "$key_dir"' EXIT
+          # An unset secret stays unset, so release.sh names it among the missing.
+          if [ -n "$SIGNING_KEY_ARMORED" ]; then
+            printf '%s\n' "$SIGNING_KEY_ARMORED" > "$key_dir/signing-key.asc"
+            export MOBILE_SIGNING_KEY="$key_dir/signing-key.asc"
+          fi
+          unset SIGNING_KEY_ARMORED
+          mobile/scripts/release.sh
+
+  # Nothing to upload: the tag is the iOS release. This records, once the iOS
+  # checks have passed on it, what an app now resolves.
+  ios:
+    needs: [plan, test]
+    if: needs.plan.outputs.ios == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The tag is the iOS release
+        run: |
+          {
+            echo "### iOS: ProtelesAuth $GITHUB_REF_NAME"
+            echo
+            echo "Released by the tag itself ($GITHUB_SHA); nothing is uploaded. SwiftPM resolves it from Package.swift at the repository root:"
+            echo
+            echo '```swift'
+            echo ".package(url: \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY\", from: \"$GITHUB_REF_NAME\")"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

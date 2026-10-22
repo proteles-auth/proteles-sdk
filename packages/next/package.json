@@ -1,0 +1,59 @@
+{
+  "name": "@proteles/next",
+  "version": "0.3.0",
+  "description": "Next.js bindings for the Proteles Backend-for-Frontend: catch-all /api/auth/* route handlers, authMiddleware, and next/headers server helpers over @proteles/bff. Tokens never reach the browser. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/next"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/next#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/bff": "^0.3.0",
+    "@proteles/js": "^0.3.0"
+  },
+  "peerDependencies": {
+    "next": "^14.2.25 || >=15.2.3"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "nextjs",
+    "bff",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

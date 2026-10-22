@@ -1,0 +1,27 @@
+{
+  "name": "proteles-sveltekit-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal SvelteKit app showing Proteles auth in ~5 minutes with @proteles/svelte.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/js": "file:../../packages/js",
+    "@proteles/svelte": "file:../../packages/svelte"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^3.0.0",
+    "@sveltejs/kit": "^2.0.0",
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "svelte": "^4.2.0",
+    "vite": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

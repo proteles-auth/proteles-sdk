@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:name=".ExampleApplication"
+        android:allowBackup="false"
+        android:label="Proteles example"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The SDK's redirect activity, declared by the app with a verified App
+            Link for its redirect host. Both redirect URIs in ExampleApplication
+            are on it:
+              https://app.example.com/oauth/callback     (sign-in)
+              https://app.example.com/oauth/signed-out   (post-logout)
+            Replace app.example.com with a domain of yours, and serve
+            https://<that domain>/.well-known/assetlinks.json naming this app's
+            package and signing certificate (see the README). autoVerify has
+            Android check it at install, which is what keeps any other app from
+            receiving the link. The server registers no private-use scheme.
+        -->
+        <activity
+            android:name="com.proteles.auth.android.RedirectActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="app.example.com" android:pathPrefix="/oauth/" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

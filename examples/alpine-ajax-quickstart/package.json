@@ -1,0 +1,18 @@
+{
+  "name": "proteles-alpine-ajax-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A no-build Alpine AJAX app with Proteles auth: the server renders auth-aware fragments.",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.mjs"
+  },
+  "dependencies": {
+    "@proteles/alpine-ajax": "file:../../packages/alpine-ajax",
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/js": "file:../../packages/js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  }
+}

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Proteles Alpine quickstart</title>
+
+    <!--
+      No build step. Two script tags: the Proteles plugin, then Alpine.
+
+      The plugin script must come *first* so it can attach its `alpine:init`
+      listener before Alpine starts (Alpine's `defer` means it runs after
+      parsing). In production, serve the file from your own origin as here, or
+      load it from the CDN pinned to an exact version and hashed, as
+      `packages/alpine/README.md` shows ("Pin the version, and the hash").
+    -->
+    <script src="/proteles-alpine.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
+
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 640px;
+        margin: 64px auto;
+        padding: 0 16px;
+        color-scheme: light dark;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 8px;
+        background: #4f46e5;
+        color: #fff;
+        cursor: pointer;
+      }
+      [data-proteles="user-chip"] {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .muted {
+        opacity: 0.7;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+
+  <!--
+    `x-data` on <body> makes the whole page one Alpine scope. This is REQUIRED:
+    Alpine only initializes directives inside an `x-data` tree, so `x-signed-in`
+    on an element with no `x-data` ancestor would silently never run — leaving the
+    element visible. One empty `x-data` at the root is the simplest fix and lets
+    every descendant use `$auth` directly.
+  -->
+  <body x-data>
+    <h1>Proteles Alpine quickstart</h1>
+    <p class="muted">A no-build page: two script tags, plus <code>x-signed-in</code> / <code>x-signed-out</code>.</p>
+
+    <!--
+      While the first /api/auth/me is in flight, `x-signed-in` and `x-signed-out`
+      are BOTH hidden, so neither branch flashes. `$auth.isLoading` lets you show
+      a placeholder in the meantime if you want one.
+    -->
+    <p x-show="$auth.isLoading" class="muted">Loading…</p>
+
+    <div x-signed-out>
+      <p>You are signed out.</p>
+      <button @click="$auth.signIn()">Sign in</button>
+    </div>
+
+    <div x-signed-in>
+      <p>Hi <strong x-text="$auth.user?.email ?? $auth.user?.preferredUsername ?? $auth.user?.sub"></strong> 👋</p>
+
+      <span data-proteles="user-chip">
+        <span x-text="$auth.user?.preferredUsername ?? $auth.user?.sub"></span>
+        <button @click="$auth.signOut()">Sign out</button>
+      </span>
+
+      <p class="muted">
+        The tokens for this session live in an encrypted, httpOnly cookie on the server.
+        Open devtools — there is nothing readable here.
+      </p>
+    </div>
+  </body>
+</html>

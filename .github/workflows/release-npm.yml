@@ -1,0 +1,239 @@
+# Publishes the 13 @proteles/* packages to npm from an `npm-vX.Y.Z` tag.
+# RELEASING.md is the runbook; this is what it runs.
+#
+# Everything here is arranged around one property: npm never lets a version be
+# published twice. There is no revert for a bad publish, only a new version
+# number in public. So everything that can fail does so before the publish:
+#
+#   verify   the same checks as every pull request (checks.yml `sdk`), on the
+#            tagged commit, publish readiness included
+#   pack     install, build and `npm pack` the 13 tarballs, with no publish
+#            identity: `npm ci` runs dependencies' install scripts and the build
+#            runs every package's toolchain, and none of that third-party code
+#            can mint a token in a job that cannot mint one
+#   publish  in the `npm-publish` environment, after a reviewer approves: the
+#            only job with `id-token: write`, it installs and builds nothing and
+#            publishes pack's tarballs with --ignore-scripts
+#
+# Authentication is npm trusted publishing (OIDC): GitHub mints a short-lived
+# token naming this repository, this workflow file and the `npm-publish`
+# environment, and npm checks it against each package's trusted publisher. No
+# npm token is stored anywhere, and the publish refuses to run if one is set.
+# Provenance is on: each version links to the commit and run that built it.
+
+name: release-npm
+
+on:
+  push:
+    tags:
+      - "npm-v*.*.*"
+
+permissions:
+  contents: read
+
+# One release at a time, and never cancelled part-way: two runs of one version
+# would each ask npm whether it is out yet, and each be told no.
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+env:
+  NODE_PIN: "26"
+
+jobs:
+  verify:
+    uses: ./.github/workflows/checks.yml
+    with:
+      sdk: true
+
+  pack:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_PIN }}
+          package-manager-cache: false
+
+      # Also checked by `publish`, which is the check that counts. Here it
+      # fails a wrong tag in a minute instead of after a reviewer approves.
+      - name: The tag names the workspace's version
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/npm-v*) ;;
+            *) echo "::error::$GITHUB_REF is not an npm-vX.Y.Z tag"; exit 1 ;;
+          esac
+          want="${GITHUB_REF_NAME#npm-v}"
+          printf '%s\n' "$want" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ||
+            { echo "::error::$GITHUB_REF_NAME is not npm-v followed by MAJOR.MINOR.PATCH"; exit 1; }
+          have="$(node -p "require('./packages/js/package.json').version")"
+          [ "$want" = "$have" ] ||
+            { echo "::error::tag $GITHUB_REF_NAME wants $want, but the packages are at $have. Bump them and re-tag, or tag npm-v$have."; exit 1; }
+          echo "tag $GITHUB_REF_NAME matches the workspace version $have"
+
+      - name: Node is the pinned major
+        run: |
+          node --version
+          case "$(node --version)" in
+            "v${NODE_PIN}".*) ;;
+            *) echo "::error::asked for Node ${NODE_PIN} and got $(node --version)"; exit 1 ;;
+          esac
+
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      # The root script, not `npm run build --workspaces`, which goes
+      # alphabetically and builds bff before the js it imports.
+      - name: npm run build
+        run: npm run build
+
+      # Dependency order, the order `publish` sends them in.
+      - name: npm pack
+        run: |
+          mkdir -p dist
+          for p in js bff management react next htmx svelte vue solid alpine alpine-ajax express fastify; do
+            npm pack --workspace "@proteles/$p" --pack-destination dist > /dev/null
+          done
+          ls -l dist
+          (cd dist && sha256sum ./*.tgz)
+
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-tarballs
+          path: dist/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [verify, pack]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The approval gate. Its required reviewers are set in the repository's
+    # settings (RELEASING.md, one-time setup), and so is the rule that only
+    # npm-v* tags may deploy to it. npm's trusted publisher names this
+    # environment, so a publish from anywhere else is refused by npm too.
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # For packages/*/package.json, whose versions name the tarballs. Nothing
+      # from the checkout is executed.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No `registry-url`: with it, setup-node writes an .npmrc that reads
+      # NODE_AUTH_TOKEN, and a token is exactly what this job must not use.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_PIN }}
+          package-manager-cache: false
+
+      - name: Toolchain and credentials
+        run: |
+          node --version
+          npm --version
+          case "$(node --version)" in
+            "v${NODE_PIN}".*) ;;
+            *) echo "::error::asked for Node ${NODE_PIN} and got $(node --version)"; exit 1 ;;
+          esac
+          # Trusted publishing needs npm 11.5.1 or later.
+          node -e '
+            const [a, b, c] = process.argv[1].split(".").map(Number);
+            if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) {
+              console.error("npm " + process.argv[1] + " is below the 11.5.1 that trusted publishing needs");
+              process.exit(1);
+            }' "$(npm --version)"
+          # A token would silently take precedence over OIDC, putting a
+          # long-lived credential back in the loop while the trusted publishers
+          # went untested until the day they were needed. Refuse it, visibly.
+          for v in NODE_AUTH_TOKEN NPM_TOKEN; do
+            if [ -n "${!v:-}" ]; then
+              echo "::error::$v is set. This job publishes over OIDC (trusted publishing) and refuses to run with a token present; remove it from the workflow and from the repository's secrets."
+              exit 1
+            fi
+          done
+          for f in "$HOME/.npmrc" .npmrc "${NPM_CONFIG_USERCONFIG:-}"; do
+            if [ -n "$f" ] && [ -f "$f" ] && grep -Eq '_auth(Token)?[[:space:]]*=' "$f"; then
+              echo "::error::$f holds an npm credential; this job publishes over OIDC only"
+              exit 1
+            fi
+          done
+          # Without `id-token: write` there is no OIDC token to exchange, and
+          # npm would fail on the first package with an authentication error.
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::no OIDC token can be requested: this job needs permissions id-token: write"
+            exit 1
+          fi
+
+      # Without this the tag is decoration: `npm-v0.4.0` on a tree still at
+      # 0.3.0 would try to publish 0.3.0 again.
+      - name: The tag names the workspace's version
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/npm-v*) ;;
+            *) echo "::error::$GITHUB_REF is not an npm-vX.Y.Z tag"; exit 1 ;;
+          esac
+          want="${GITHUB_REF_NAME#npm-v}"
+          printf '%s\n' "$want" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ||
+            { echo "::error::$GITHUB_REF_NAME is not npm-v followed by MAJOR.MINOR.PATCH"; exit 1; }
+          have="$(node -p "require('./packages/js/package.json').version")"
+          [ "$want" = "$have" ] ||
+            { echo "::error::tag $GITHUB_REF_NAME wants $want, but the packages are at $have. Bump them and re-tag, or tag npm-v$have."; exit 1; }
+          echo "tag $GITHUB_REF_NAME matches the workspace version $have"
+
+      # The approval can come long after the tag was pushed. A tag deleted and
+      # pushed again elsewhere in the meantime starts a run of its own; this
+      # one must not publish the commit the tag no longer names.
+      - name: The tag still names this run's commit
+        run: |
+          remote="$(git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/tags/$GITHUB_REF_NAME" "refs/tags/$GITHUB_REF_NAME^{}")"
+          commit="$(printf '%s\n' "$remote" | awk '$2 ~ /\^\{\}$/ { print $1 }')"
+          [ -n "$commit" ] || commit="$(printf '%s\n' "$remote" | awk 'NR == 1 { print $1 }')"
+          [ "$commit" = "$GITHUB_SHA" ] ||
+            { echo "::error::$GITHUB_REF_NAME now names ${commit:-nothing}, not $GITHUB_SHA, the commit this run built"; exit 1; }
+          echo "$GITHUB_REF_NAME names $GITHUB_SHA"
+
+      # By the id `pack` reported, so this is that job's upload and no other;
+      # the action also checks the download against the digest recorded at
+      # upload (digest-mismatch defaults to error).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.pack.outputs.artifact-id }}
+          path: dist
+
+      # Dependency order: js has no @proteles dependency, bff needs js, and the
+      # rest need one or both. Out of order does not fail (npm never checks
+      # that a dependency exists); the registry would just serve, for a few
+      # seconds, a package whose dependency 404s.
+      #
+      # A version already on npm is skipped, so a run that failed part-way is
+      # finished by re-running this job rather than by publishing the rest by
+      # hand.
+      - name: npm publish
+        run: |
+          (cd dist && sha256sum ./*.tgz)
+          for p in js bff management react next htmx svelte vue solid alpine alpine-ajax express fastify; do
+            v="$(node -p "require('./packages/$p/package.json').version")"
+            echo "--- @proteles/$p@$v"
+            if [ "$(npm view "@proteles/$p@$v" version 2>/dev/null)" = "$v" ]; then
+              echo "    already on npm; skipping"
+              continue
+            fi
+            # `./`, or npm reads `dist/x.tgz` as a GitHub `user/repo` and tries git.
+            t="./dist/proteles-$p-$v.tgz"
+            [ -f "$t" ] || { echo "::error::no $t: pack did not build it"; exit 1; }
+            npm publish "$t" --access public --ignore-scripts --provenance
+          done
+          echo "published @proteles/* at $GITHUB_REF_NAME"

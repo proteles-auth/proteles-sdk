@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Package visibility (Android 11+): to find a browser that offers Custom
+        Tabs, and the default browser when none does. Without these the SDK sees
+        no browser at all and every sign-in fails with BrowserUnavailable.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <application>
+        <!--
+            Holds one sign-in (or end-session) request while the browser is in
+            front: it opens the Custom Tab, receives the redirect from
+            RedirectActivity, and notices when the user closes the tab without
+            one. Not exported: only this app can start it.
+
+            RedirectActivity is NOT declared here. The app declares it, with a
+            verified App Link intent filter for its own redirect — see the README.
+        -->
+        <activity
+            android:name="com.proteles.auth.android.AuthorizationActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>

@@ -1,0 +1,30 @@
+{
+  "name": "proteles-nextjs-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal Next.js App Router app showing Proteles auth in ~5 minutes with @proteles/next + @proteles/react.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@proteles/bff": "file:../../packages/bff",
+    "@proteles/js": "file:../../packages/js",
+    "@proteles/next": "file:../../packages/next",
+    "@proteles/react": "file:../../packages/react",
+    "next": "^16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

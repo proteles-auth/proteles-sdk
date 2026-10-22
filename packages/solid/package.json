@@ -1,0 +1,65 @@
+{
+  "name": "@proteles/solid",
+  "version": "0.3.0",
+  "description": "Solid 1.x primitives and components for Proteles authentication, plus SolidStart server handlers. Tokens never reach the browser. Needs a Proteles account: sign up for free at proteles.com.",
+  "license": "MIT",
+  "author": "Proteles",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proteles-auth/proteles-sdk.git",
+    "directory": "packages/solid"
+  },
+  "homepage": "https://github.com/proteles-auth/proteles-sdk/tree/main/packages/solid#readme",
+  "bugs": "https://github.com/proteles-auth/proteles-sdk/issues",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "solid": "./dist/source/index.jsx",
+      "node": "./dist/ssr/index.js",
+      "import": "./dist/dom/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/api/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@proteles/bff": "^0.3.0"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.8.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-typescript": "^7.26.0",
+    "babel-preset-solid": "^1.9.0",
+    "solid-js": "^1.9.0"
+  },
+  "keywords": [
+    "oauth2",
+    "oidc",
+    "solid",
+    "solidjs",
+    "solidstart",
+    "authentication",
+    "proteles"
+  ],
+  "engines": {
+    "node": ">=18.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

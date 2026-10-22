@@ -1,0 +1,86 @@
+# Every pull request, every push to main, and nightly.
+#
+#   checks / sdk             the 13 npm packages: build, typecheck, test, the
+#                            generated management types against spec/openapi.json,
+#                            the shared vectors' checksum, publish readiness
+#   checks / mobile-ios      the iOS SDK on macOS: swift build, swift test, the iOS build check
+#   checks / mobile-android  the Android SDK: Gradle tests and release build, the
+#                            Maven publication, the release script against a stub
+#   deps-npm                 npm advisories in what the packages ship
+#
+# The three `checks` jobs live in checks.yml, which the release workflows call
+# too. Nothing here reads a secret: a pull request from a fork runs exactly what
+# one from this repository does, with a read-only token.
+#
+# The nightly is what notices a new advisory (deps-npm), or a runner image that
+# stopped building the native SDKs, on a day nobody pushes anything.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 05:17 UTC, off the hour that every other nightly in the world picks.
+    - cron: "17 5 * * *"
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the run in progress; main and the
+# nightly always run to the end.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+    with:
+      sdk: true
+      mobile-ios: true
+      mobile-android: true
+      cache: true
+
+  # npm advisories. What the packages ship (`--omit=dev`) gates at high, at the
+  # root (all 13 workspaces) and in every example that commits a lockfile (the
+  # Next.js quickstart, which installs with `npm ci`). The development
+  # dependencies, the frameworks the packages are tested against, are reported
+  # and not gated: customers bring their own versions of those.
+  #
+  # `npm audit` reads package-lock.json and asks the registry; it installs
+  # nothing. A network failure exits non-zero, so it fails rather than passes.
+  deps-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          package-manager-cache: false
+
+      - name: Production dependencies (high and critical fail)
+        run: |
+          rc=0
+          echo "--- the workspace (packages/*)"
+          npm audit --omit=dev --audit-level=high || rc=1
+          examples="$(git ls-files 'examples/*/package-lock.json')"
+          # A loop over nothing passes; an example that stopped committing its
+          # lockfile should say so rather than go unaudited.
+          [ -n "$examples" ] || { echo "::error::no examples/*/package-lock.json is tracked"; exit 1; }
+          for lock in $examples; do
+            dir="$(dirname "$lock")"
+            echo "--- $dir"
+            (cd "$dir" && npm audit --omit=dev --audit-level=high) || rc=1
+          done
+          exit "$rc"
+
+      - name: Development dependencies (critical reported, not gated)
+        run: |
+          npm audit --audit-level=critical ||
+            echo "::warning::development dependencies have critical advisories (reported, not gated)"
