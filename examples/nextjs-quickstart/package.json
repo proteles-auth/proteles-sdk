@@ -14,7 +14,7 @@
     "@proteles/js": "file:../../packages/js",
     "@proteles/next": "file:../../packages/next",
     "@proteles/react": "file:../../packages/react",
-    "next": "^16.4.0",
+    "next": "^16.4.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
