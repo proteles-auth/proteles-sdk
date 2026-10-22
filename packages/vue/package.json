@@ -1,6 +1,6 @@
 {
   "name": "@proteles/vue",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Vue 3 composables and components for Proteles authentication, plus Nuxt/h3 server handlers. Tokens never reach the browser. Needs a Proteles account: sign up for free at proteles.com.",
   "license": "MIT",
   "author": "Proteles",
@@ -35,7 +35,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@proteles/bff": "^0.3.0"
+    "@proteles/bff": "^0.4.0"
   },
   "peerDependencies": {
     "vue": "^3.3.0"

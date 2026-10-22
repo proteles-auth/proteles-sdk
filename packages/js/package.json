@@ -1,6 +1,6 @@
 {
   "name": "@proteles/js",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Framework-agnostic OAuth2/OIDC client core (PKCE, code exchange, refresh rotation, revoke, userinfo) for the Proteles identity platform. Needs a Proteles account: sign up for free at proteles.com.",
   "license": "MIT",
   "author": "Proteles",

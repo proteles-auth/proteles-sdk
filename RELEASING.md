@@ -55,10 +55,14 @@ release cannot be held to less than a pull request was.
      Central](#maven-central). Environment secrets, not repository secrets: only
      the job that deploys to `mobile-release` receives them, and only after a
      reviewer approves it.
-2. **Tag rulesets** (*Settings › Rules › Rulesets › New tag ruleset*), targeting
-   `npm-v*` and `[0-9]*.[0-9]*.[0-9]*`: restrict creations, updates and
-   deletions, with the maintainers on the bypass list. Only they can start a
-   release, and nobody moves or deletes a release tag.
+2. **Tag rulesets** (*Settings › Rules › Rulesets › New tag ruleset*), two of
+   them:
+   - targeting `npm-v*` and `[0-9]*.[0-9]*.[0-9]*`: restrict creations, updates
+     and deletions, with the maintainers on the bypass list. Only they can
+     start a release, and nobody moves or deletes a release tag.
+   - targeting `v*`: restrict creations, with nobody on the bypass list.
+     SwiftPM reads `vX.Y.Z` tags as well as `X.Y.Z`, so a stray `v` tag would
+     publish an iOS version.
 3. **Branch protection for `main`**: require a pull request, and require the
    checks `checks / sdk`, `checks / mobile-ios`, `checks / mobile-android` and
    `deps-npm`. A release is tagged on a commit those passed on.
@@ -133,8 +137,14 @@ job refuses to run if `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set, or if an
 1. **Bump the versions**, all 13 together, from the repository root:
 
    ```sh
-   npm version 0.4.0 --workspaces --no-git-tag-version
+   npm version 0.4.0 --workspaces --no-git-tag-version --no-workspaces-update
    ```
+
+   `--no-workspaces-update` matters: without it npm reinstalls while the ranges
+   still name the old version, fetches the previous release from npm into
+   `packages/*/node_modules`, and the `npm install` below can keep it in the
+   lockfile, so a package builds against its sibling's last release instead of
+   this tree.
 
    That changes each `package.json`, but not the `^0.3.0` ranges the packages
    use to depend on each other: change those too. Change the pinned version in

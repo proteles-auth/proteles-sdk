@@ -1,6 +1,6 @@
 {
   "name": "@proteles/htmx",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "htmx server helpers for Proteles authentication: HX-Redirect-aware login flows, route guards, and fragment guards. Server-only — htmx needs no client-side auth script. Needs a Proteles account: sign up for free at proteles.com.",
   "license": "MIT",
   "author": "Proteles",
@@ -31,7 +31,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@proteles/bff": "^0.3.0"
+    "@proteles/bff": "^0.4.0"
   },
   "keywords": [
     "oauth2",

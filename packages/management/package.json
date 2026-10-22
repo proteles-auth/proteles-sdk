@@ -1,6 +1,6 @@
 {
   "name": "@proteles/management",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Typed client for the Proteles Management API (/api/v1/*): tenants, apps, API keys, connections, branding, and audit. Used by CI to provision tenants and apps. Needs a Proteles account: sign up for free at proteles.com.",
   "license": "MIT",
   "author": "Proteles",

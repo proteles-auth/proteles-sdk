@@ -18,7 +18,7 @@ framework SDKs: instead of `<SignedIn>` components you get a reactive store, a
 
 ```html
 <!-- 1. Proteles first, so it can hook alpine:init before Alpine starts -->
-<script src="https://cdn.jsdelivr.net/npm/@proteles/alpine@0.3.0/dist/proteles-alpine.js"
+<script src="https://cdn.jsdelivr.net/npm/@proteles/alpine@0.4.0/dist/proteles-alpine.js"
         integrity="sha384-REPLACE-WITH-THE-HASH-BELOW" crossorigin="anonymous"></script>
 <!-- 2. Alpine -->
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"
@@ -46,7 +46,7 @@ browser the hash of the file you reviewed: with `integrity`, it refuses any
 other bytes. Compute each hash once, for the exact URL you load:
 
 ```bash
-curl -fsSL https://cdn.jsdelivr.net/npm/@proteles/alpine@0.3.0/dist/proteles-alpine.js | openssl dgst -sha384 -binary | openssl base64 -A
+curl -fsSL https://cdn.jsdelivr.net/npm/@proteles/alpine@0.4.0/dist/proteles-alpine.js | openssl dgst -sha384 -binary | openssl base64 -A
 ```
 
 and write `integrity="sha384-<what that prints>"`. Until you do, the

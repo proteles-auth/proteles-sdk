@@ -1,6 +1,6 @@
 {
   "name": "@proteles/alpine",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Alpine.js plugin for Proteles authentication: a reactive $auth store and x-signed-in / x-signed-out directives. Works with no build step via a CDN script tag. Tokens never reach the browser. Needs a Proteles account: sign up for free at proteles.com.",
   "license": "MIT",
   "author": "Proteles",

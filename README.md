@@ -19,7 +19,7 @@ Proteles account before its install line
 
 ## Packages
 
-All thirteen are on npm at **0.3.0** and are released together, at one version
+All thirteen are on npm and are released together, at one version
 ([`CHANGELOG.md`](CHANGELOG.md)).
 
 | Package | What it is |

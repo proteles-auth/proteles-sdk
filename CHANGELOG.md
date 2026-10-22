@@ -3,7 +3,7 @@
 All thirteen `@proteles/*` packages are versioned and released together, so this
 is one file rather than thirteen. They share a version because their
 inter-dependencies are pinned to a single minor (`@proteles/next` depends on
-`@proteles/bff@^0.3.0` and so on). Letting them drift apart would mean
+`@proteles/bff@^0.4.0` and so on). Letting them drift apart would mean
 maintaining every combination.
 
 The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
@@ -12,11 +12,13 @@ versioning is [semver](https://semver.org/spec/v2.0.0.html). While the major is
 
 Each release is tagged `npm-vX.Y.Z` in this repository
 ([`RELEASING.md`](RELEASING.md)). Versions up to 0.3.0 were released before the
-packages moved here, so their tags are not in this repository; their links
-below go to npm instead. The native SDKs have their own changelog,
+packages moved here, so their tags are not in this repository. Each version's
+link below goes to its page on npm. The native SDKs have their own changelog,
 [`mobile/CHANGELOG.md`](mobile/CHANGELOG.md).
 
 ## [Unreleased]
+
+## [0.4.0] — 2026-10-22
 
 ### Changed (every package)
 
@@ -27,8 +29,10 @@ below go to npm instead. The native SDKs have their own changelog,
   they point at, so a debugger steps through the TypeScript and "go to
   definition" lands in the source. `@proteles/solid` and `@proteles/svelte`
   ship `.d.ts.map` files only; `tsconfig.base.json` says why.
-- Released from this repository's `npm-vX.Y.Z` tags with npm provenance: each
-  version links to the commit and workflow run that built it.
+- Published by GitHub Actions
+  ([`release-npm.yml`](.github/workflows/release-npm.yml)) from this
+  repository's `npm-vX.Y.Z` tags, with npm provenance: each version links to
+  the commit and workflow run that built it.
 
 ### Added (`@proteles/management`)
 
@@ -942,11 +946,8 @@ ranges from the registry and imports.
   [`tools/npm-publish-readiness.mjs`](tools/npm-publish-readiness.mjs),
   which is in turn tested against trees where each of its rules is broken.
 
-<!-- From the first release made here on, a version links to its tag
-(https://github.com/proteles-auth/proteles-sdk/releases/tag/npm-vX.Y.Z) and
-Unreleased to the compare view from the latest tag
-(https://github.com/proteles-auth/proteles-sdk/compare/npm-vX.Y.Z...main). -->
 [Unreleased]: https://github.com/proteles-auth/proteles-sdk/commits/main
+[0.4.0]: https://www.npmjs.com/package/@proteles/js/v/0.4.0
 [0.3.0]: https://www.npmjs.com/package/@proteles/js/v/0.3.0
 [0.2.0]: https://www.npmjs.com/package/@proteles/js/v/0.2.0
 [0.1.1]: https://www.npmjs.com/package/@proteles/js/v/0.1.1
