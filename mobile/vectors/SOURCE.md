@@ -10,7 +10,7 @@ against the public `jwks` each vector carries.
 | | |
 |---|---|
 | Copied from | `sdk/mobile/vectors/vectors.json` in the server repository |
-| At commit | `b891ec63` (the same commit as `spec/SERVER_COMMIT`) |
+| At commit | `b891ec63`; byte for byte unchanged at `b25a1811` (the commit in `spec/SERVER_COMMIT`), where the server keeps it in `testdata/idtoken-vectors/` |
 | SHA-256 | recorded in [`SHA256SUMS`](SHA256SUMS) |
 
 The other file here, `reference-verify.mjs`, is the ID-token rules of

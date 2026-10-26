@@ -4434,7 +4434,7 @@
       "get": {
         "operationId": "checkApp",
         "summary": "Test this app: what its registration will do",
-        "description": "Issue #6. Reads the app's registration and says what it will do before a real person finds out. It reports whether the app is switched on; whether a refresh token is issued (and so whether a session outlives an access token); whether `openid` is allowed; its redirect addresses (plain http, an address on the developer's own machine, two that differ only by a trailing slash); whether a post-logout address is registered; and its back-channel logout address, held to the rule it was registered under.\n\n**Read-only, and from the registration alone.** It sends nothing to the app. Whether recent token requests failed to authenticate is not reported, because nothing records a failed client authentication.\n\n`ready` is `false` when any finding's `level` is `problem`. Findings come in a fixed order, and `check` names each one for a script to match on.\n",
+        "description": "Issue #6. Reads the app's registration and says what it will do before a real person finds out. It reports whether the app is switched on; whether a refresh token is issued (and so whether a session outlives an access token); whether `openid` is allowed; for an app that signs people in through the browser, whether `offline_access` is allowed (`@proteles/bff` and the framework SDKs built on it ask for it, and a sign-in asking for a scope the app lacks is refused; a warning for a confidential app, information for a public one, since the native SDKs do not ask for it and a web SDK without a client secret does); its redirect addresses (plain http, an address on the developer's own machine, two that differ only by a trailing slash); whether a post-logout address is registered; and its back-channel logout address, held to the rule it was registered under.\n\n**Read-only, and from the registration alone.** It sends nothing to the app. Whether recent token requests failed to authenticate is not reported, because nothing records a failed client authentication.\n\n`ready` is `false` when any finding's `level` is `problem`. Findings come in a fixed order, and `check` names each one for a script to match on.\n",
         "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(apps:read)",
         "tags": [
           "Apps"
@@ -6877,7 +6877,7 @@
             "items": {
               "type": "string"
             },
-            "description": "ABSENT and `[]` are treated IDENTICALLY: both become\n`[\"openid\", \"profile\", \"email\"]`.\n"
+            "description": "ABSENT and `[]` are treated IDENTICALLY: both become\n`[\"openid\", \"profile\", \"email\", \"offline_access\"]`, for every\napp. `offline_access` is what `@proteles/bff` and the framework SDKs built\non it ask for by default, and `/oauth/authorize` refuses a scope the app is\nnot registered for (`invalid_scope`). Whether a refresh token is issued is\ndecided by the `refresh_token` grant, not by this scope, so on an app\nwithout that grant it only keeps such a sign-in from being refused. Named\nscopes are stored exactly as named, and are not checked against\n`scopes_supported`. Apps created before the default had `offline_access`\nkeep the scopes they were created with.\n"
           },
           "first_party": {
             "type": [
@@ -9490,7 +9490,7 @@
         "properties": {
           "check": {
             "type": "string",
-            "description": "Which check: `active`, `refresh_token`, `openid`, `redirect_uris`, `post_logout_redirect_uris` or `backchannel_logout`. A check may report more than one finding (`redirect_uris` reports one per address it has something to say about)."
+            "description": "Which check: `active`, `refresh_token`, `openid`, `offline_access`, `redirect_uris`, `post_logout_redirect_uris` or `backchannel_logout`. A check may report more than one finding (`redirect_uris` reports one per address it has something to say about)."
           },
           "level": {
             "type": "string",

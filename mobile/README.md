@@ -53,16 +53,18 @@ curl -sS "$PROTELES_URL/api/v1/apps" \
 The `client_id` in the answer is the one to configure the app with; the server
 chooses it. There is no `client_secret`, and that is right for a public client.
 
-**Two fields are not optional, although the API lets you leave them out:**
+**Name these two fields, although the API lets you leave them out:**
 
 - `"token_endpoint_auth_method": "none"`. Left out, the client is created
   **confidential** (`client_secret_basic`), and the SDK, which holds no
   secret, cannot redeem a sign-in with it.
-- `"grant_types": ["authorization_code", "refresh_token"]`. Left out, the
-  client gets `authorization_code` alone and **no refresh token**, so the user
+- `"grant_types": ["authorization_code", "refresh_token"]`. Without the
+  `refresh_token` grant the client gets **no refresh token**, so the user
   signs in again every time the access token expires (fifteen minutes by
-  default). Asking for the `offline_access` scope does not change that; the
-  grant does.
+  default). Left out, the API registers these same two grants, but a server
+  from before mid-October 2026 registers `authorization_code` alone, so name
+  both. Asking for the `offline_access` scope does not change whether a
+  refresh token is issued; the grant does.
 
 **Redirect URIs.** The redirect is an `https` URL on a domain you control,
 associated with your app, so that only your app can receive it: a Universal
@@ -97,8 +99,14 @@ host and what its file lacked, and nothing is created. Changing the redirect
 URIs later checks them again. Set up the files first, as each platform's README
 describes, then register.
 
-`scopes` defaults to exactly these three; `openid` is required. The first
-time a user signs in to the app, they are shown a consent screen naming it.
+`scopes` names the three the native SDKs ask for, `openid profile email`;
+`openid` is required. Left out, the API registers four,
+`openid profile email offline_access`: the fourth is for `@proteles/bff` and
+the framework SDKs built on it, which ask for it, and a native app has no use
+for it, since the grant, not the scope, decides whether a refresh token is
+issued. "Test this app" (`checkApp`) notes its absence as information, which a
+native app can ignore. The first time a user signs in to the app, they are
+shown a consent screen naming it.
 
 **Do not send `"application_type": "native"`, and nothing is lost by leaving it
 out.** OpenID Connect registration defines it; the SDKs do not send it, and the

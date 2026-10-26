@@ -868,10 +868,12 @@ export class ManagementClient {
 
   /**
    * "Test this app": what the app's registration will do, before a real person
-   * finds out. Whether it is on, whether a refresh token is issued, its
-   * redirect and post-logout addresses, `openid`, and its back-channel logout
-   * address. Read-only, from the registration alone; `ready` is false when any
-   * finding is a `problem`. Under `apps:read`.
+   * finds out. Whether it is on, whether a refresh token is issued, `openid`,
+   * `offline_access` for an app with the code grant (`@proteles/bff` asks for
+   * it, and a sign-in asking for a scope the app lacks is refused), its
+   * redirect and post-logout addresses, and its back-channel logout address.
+   * Read-only, from the registration alone; `ready` is false when any finding
+   * is a `problem`. Under `apps:read`.
    */
   async checkApp(clientId: string, scope: TenantScope = {}): Promise<AppCheck> {
     const w = await this.request<wire.AppCheck>("GET", `/api/v1/apps/${segment(clientId)}/check`, {

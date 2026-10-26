@@ -115,8 +115,11 @@ Management API (`POST /api/v1/apps`) — not one per install. The client must be
   fingerprints ([Redirect URIs](#redirect-uris), step 2), so serve the file
   first.
 
-The API's defaults are neither of the first two — a confidential client with
-only `authorization_code` — so both have to be asked for. The server assigns
+Ask for the first two by name. Without `token_endpoint_auth_method` the client
+is confidential, which the app cannot be. Without `grant_types` it gets
+`authorization_code` and `refresh_token`, but a server from before mid-October
+2026 gives `authorization_code` alone, so name both:
+`"grant_types": ["authorization_code", "refresh_token"]`. The server assigns
 the `client_id`; configure the SDK with the one it returns. Leave out
 `"application_type": "native"`: the server does not use it, and it can be added
 on request ([What it does not do](#what-it-does-not-do)).

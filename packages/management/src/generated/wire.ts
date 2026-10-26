@@ -62,10 +62,10 @@ export interface AppCheck {
 
 export interface AppCheckFinding {
   /**
-   * Which check: `active`, `refresh_token`, `openid`, `redirect_uris`,
-   * `post_logout_redirect_uris` or `backchannel_logout`. A check may report
-   * more than one finding (`redirect_uris` reports one per address it has
-   * something to say about).
+   * Which check: `active`, `refresh_token`, `openid`, `offline_access`,
+   * `redirect_uris`, `post_logout_redirect_uris` or `backchannel_logout`. A
+   * check may report more than one finding (`redirect_uris` reports one per
+   * address it has something to say about).
    */
   check: string;
   /**
@@ -390,7 +390,15 @@ export interface AppsCreateAppRequest {
   grant_types?: string[];
   /**
    * ABSENT and `[]` are treated IDENTICALLY: both become `["openid",
-   * "profile", "email"]`.
+   * "profile", "email", "offline_access"]`, for every app. `offline_access` is
+   * what `@proteles/bff` and the framework SDKs built on it ask for by
+   * default, and `/oauth/authorize` refuses a scope the app is not registered
+   * for (`invalid_scope`). Whether a refresh token is issued is decided by the
+   * `refresh_token` grant, not by this scope, so on an app without that grant
+   * it only keeps such a sign-in from being refused. Named scopes are stored
+   * exactly as named, and are not checked against `scopes_supported`. Apps
+   * created before the default had `offline_access` keep the scopes they were
+   * created with.
    */
   scopes?: string[];
   /**
