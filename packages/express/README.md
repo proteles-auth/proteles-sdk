@@ -27,9 +27,19 @@ app.get("/dashboard", requireAuth(), (req, res) => {
 });
 ```
 
-Configuration comes from the environment (`PROTELES_ISSUER`,
-`PROTELES_CLIENT_ID`, `PROTELES_SESSION_SECRET`, `PROTELES_APP_URL`) or from an
-object passed to either function. See `@proteles/bff` for the full list.
+Configuration comes from the environment or from an object passed to either
+function:
+
+- `PROTELES_ISSUER`: your workspace's issuer, `https://<workspace>.auth.proteles.com`.
+- `PROTELES_CLIENT_ID` and `PROTELES_CLIENT_SECRET`: the app's, as registered.
+  An app registered as confidential (`client_secret_basic` or
+  `client_secret_post`), the usual kind for a server, needs the secret.
+- `PROTELES_SESSION_SECRET`: base64 of 32 random bytes, which encrypts the
+  session cookies (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`).
+- `PROTELES_APP_URL`: your app's origin. The sign-in callback is this plus
+  `/api/auth/callback`, and that exact address is the redirect URI to register.
+
+See `@proteles/bff` for the full list.
 
 `/api/auth/signup` is `/login` opening on the workspace's hosted sign-up page,
 which signs the new person in and brings them back to `returnTo`. Where the
