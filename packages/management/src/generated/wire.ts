@@ -2663,8 +2663,13 @@ export interface TenantUpdateRequest {
    * countdown's clothes. Unlike the quota fields below, this is **not**
    * platform-only. It is the tenant's own security posture, the same class of
    * decision as `mfa_policy`, and the tenant is who bears it. Audited as
-   * `mfa.self_recovery_changed` (warning) in every direction, including off —
-   * turning it off strands anybody already counting down.
+   * `mfa.self_recovery_changed` (warning) in every direction, including off.
+   * **`null` drops every request in flight**, in the same transaction as the
+   * setting. Each one that was counting down gets an
+   * `mfa.self_recovery_cancelled` row (info) with
+   * `reason=workspace_turned_it_off`, and its account is mailed that nothing
+   * will be removed. An owner or administrator of the workspace waits at least
+   * seven days whatever this says.
    */
   mfa_self_recovery_hours?: number | null;
   /**
@@ -3456,7 +3461,7 @@ export interface WebhookEndpointWriteResult {
  * refused at write time rather than stored, because "a typo would otherwise
  * look configured and silently never fire".
  */
-export type WebhookEventName = "mfa.admin_reset" | "webhook.dead_letter" | "webhook.endpoint_disabled" | "user.created" | "user.deactivated" | "user.reactivated" | "account.deleted" | "email.changed";
+export type WebhookEventName = "mfa.admin_reset" | "webhook.dead_letter" | "webhook.endpoint_disabled" | "user.created" | "user.deactivated" | "user.reactivated" | "account.deleted" | "email.changed" | "mfa.self_recovery_scheduled" | "mfa.self_recovery_completed" | "app.created" | "app.updated" | "app.deleted";
 
 export interface WebhookReplayOneResult {
   requeued: number;

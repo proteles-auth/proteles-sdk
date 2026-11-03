@@ -18,6 +18,16 @@ link below goes to its page on npm. The native SDKs have their own changelog,
 
 ## [Unreleased]
 
+### Added (`@proteles/management`)
+
+- `WebhookEventName` gains five events the server sends (`spec/` is now the
+  server's at `53c16463`): `app.created`, `app.updated` and `app.deleted`, sent
+  when an app in the workspace is added, changed (including switched off or on,
+  or its secret rotated) or removed; and `mfa.self_recovery_scheduled` and
+  `mfa.self_recovery_completed`, for the emailed second-factor reset. A server
+  older than these events refuses a webhook endpoint that subscribes to them
+  with a 400.
+
 ### Changed (`@proteles/management`)
 
 - Documentation only, for the server's change of 2026-10-26 (`spec/` is now
