@@ -1354,6 +1354,53 @@ test("the incident path reaches the right endpoints", async () => {
   ]);
 });
 
+test("sendUserPasswordResetLink posts the reason and keeps an undelivered mail visible", async () => {
+  // `delivered: false` means the link exists and the mail did not go. A
+  // mapping that defaulted it, or read it for truthiness into "sent", would
+  // tell an operator the user has a link they never received.
+  const { client, calls } = make(() =>
+    json(
+      {
+        user_id: "u1",
+        username: "alice",
+        sent_to: { email: "alice@example.com", backup: null },
+        expires_at: "2026-11-11T00:00:00Z",
+        delivered: false,
+      },
+      202,
+    ),
+  );
+  const r = await client.sendUserPasswordResetLink("u1", { tenantId: "t1", reason: "ticket 42" });
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(new URL(calls[0]!.url).pathname, "/api/v1/users/u1/password/reset-link");
+  // The server refuses an unknown key with a 400 and sends nothing, so the
+  // body carries exactly what the request schema names.
+  assert.deepEqual(calls[0]!.body, { tenant_id: "t1", reason: "ticket 42" });
+  assert.equal(r.delivered, false);
+  assert.equal(r.sentTo.email, "alice@example.com");
+  assert.equal(r.expiresAt, "2026-11-11T00:00:00Z");
+});
+
+test("sendUserPasswordResetLink's hold is a ManagementError carrying its slug", async () => {
+  const { client } = make(() =>
+    json(
+      {
+        error: "recent_recovery_change",
+        message: "held",
+        until: "2026-11-17T00:00:00Z",
+        reason: "backup_email_added",
+      },
+      409,
+    ),
+  );
+  await assert.rejects(client.sendUserPasswordResetLink("u1"), (err: unknown) => {
+    assert.ok(err instanceof ManagementError);
+    assert.equal(err.status, 409);
+    assert.equal(err.code, "recent_recovery_change");
+    return true;
+  });
+});
+
 test("deactivateUser surfaces a failed session revoke rather than hiding it", async () => {
   // `sessionsRevokedAt: null` on this path does not mean "no sessions" — it
   // means the account was switched off and the revocation did not complete, so

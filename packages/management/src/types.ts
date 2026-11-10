@@ -1046,6 +1046,25 @@ export interface ResetMfaResult {
   note: string;
 }
 
+/** Where a password link went, and until when. Never the link itself. */
+export interface PasswordResetLink {
+  userId: string;
+  username: string;
+  sentTo: {
+    /** The user's own confirmed email address, which the link went to. */
+    email: string | null;
+  };
+  /** When the link stops working: 24 hours after it was made. */
+  expiresAt: string;
+  /**
+   * Whether the mail relay took the mail.
+   *
+   * `false` is an outcome, not an error: the link was made and recorded and
+   * the user did not receive it. Send another later.
+   */
+  delivered: boolean;
+}
+
 /** What ending a user's sessions actually did. */
 export interface RevokeSessionsResult {
   userId: string;

@@ -81,6 +81,7 @@ export type {
   ManagementScope,
   MfaPolicy,
   PasskeyAttestation,
+  PasswordResetLink,
   PaidPlan,
   Plan,
   PlanBinding,

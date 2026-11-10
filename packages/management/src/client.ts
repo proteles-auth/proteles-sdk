@@ -40,6 +40,7 @@ import type {
   DiscardResult,
   FetchLike,
   FleetHealth,
+  PasswordResetLink,
   Plan,
   PlanVersion,
   PlanVersionFields,
@@ -668,6 +669,41 @@ export class ManagementClient {
       emailRemoved: w.email_removed,
       smsRemoved: w.sms_removed,
       note: w.note,
+    };
+  }
+
+  /**
+   * Mail a user a link to choose a new password — the forgotten-password response.
+   *
+   * The link goes only to the user's own confirmed address: the caller decides
+   * whether one goes, never where, and never sees it. It lasts 24 hours and
+   * works once, and until it is used nothing about the account changes — the
+   * password keeps working and nobody is signed out. Using it sets the
+   * password and ends every session.
+   *
+   * Needs `users:reset_password`, which is strict: a key with no scopes, or
+   * one holding only `users:reset_mfa`, is refused. A tenant key is held off a
+   * user for 7 days after a change to how they get back in (409
+   * `recent_recovery_change`); the platform token is not.
+   *
+   * Read `delivered` on the result: `false` means the link exists and the mail
+   * did not go, so send another later.
+   */
+  async sendUserPasswordResetLink(
+    userId: string,
+    input: { tenantId?: string | null; reason?: string } = {},
+  ): Promise<PasswordResetLink> {
+    const w = await this.request<wire.UsersPasswordLinkResponse>(
+      "POST",
+      `/api/v1/users/${segment(userId)}/password/reset-link`,
+      { body: { tenant_id: input.tenantId, reason: input.reason } },
+    );
+    return {
+      userId: w.user_id,
+      username: w.username,
+      sentTo: { email: w.sent_to.email },
+      expiresAt: w.expires_at,
+      delivered: w.delivered,
     };
   }
 
