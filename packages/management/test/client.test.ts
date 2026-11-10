@@ -897,6 +897,25 @@ test("updateTenant sends accountRecoveryCodesEnabled, false included, and nothin
   assert.ok(!("account_recovery_codes_enabled" in (calls[0]!.body as Record<string, unknown>)));
 });
 
+test("the backup-address and challenge-question switches: false sent, absent unsent, an older server's silence kept", async () => {
+  for (const enabled of [true, false]) {
+    const { client, calls } = make(() => json({ id: "t1", slug: "acme", status: "active" }));
+    await client.updateTenant("t1", { backupEmailEnabled: enabled, challengeQuestionsEnabled: !enabled });
+    assert.deepEqual(calls[0]!.body, { backup_email_enabled: enabled, challenge_questions_enabled: !enabled });
+  }
+  const { client, calls } = make(() => json({ id: "t1", slug: "acme", status: "active" }));
+  const t = await client.updateTenant("t1", { mfaPolicy: "optional" });
+  const body = calls[0]!.body as Record<string, unknown>;
+  assert.ok(!("backup_email_enabled" in body) && !("challenge_questions_enabled" in body));
+  assert.ok(!("backupEmailEnabled" in t) && !("challengeQuestionsEnabled" in t), "absent, not invented as off");
+  const read = make(() =>
+    json({ id: "t1", slug: "acme", status: "active", backup_email_enabled: false, challenge_questions_enabled: true }),
+  );
+  const r = await read.client.getTenant("t1");
+  assert.equal(r.backupEmailEnabled, false);
+  assert.equal(r.challengeQuestionsEnabled, true);
+});
+
 test("updateTenant sends both sign-up switches, false included, and neither when absent", async () => {
   // The two sign-up switches. `false` is how sign-up is closed again, so the
   // falsy-value trap matters here as it does for the factors.

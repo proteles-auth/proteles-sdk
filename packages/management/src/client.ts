@@ -262,6 +262,12 @@ export class ManagementClient {
     if (patch.accountRecoveryCodesEnabled !== undefined) {
       body.account_recovery_codes_enabled = patch.accountRecoveryCodesEnabled;
     }
+    if (patch.backupEmailEnabled !== undefined) {
+      body.backup_email_enabled = patch.backupEmailEnabled;
+    }
+    if (patch.challengeQuestionsEnabled !== undefined) {
+      body.challenge_questions_enabled = patch.challengeQuestionsEnabled;
+    }
     if (patch.passwordSignupEnabled !== undefined) {
       body.password_signup_enabled = patch.passwordSignupEnabled;
     }
@@ -2244,6 +2250,10 @@ function toTenant(w: wire.TenantDetail): Tenant {
     mfaSelfRecoveryHours: w.mfa_self_recovery_hours,
     mfaEmailFactorEnabled: w.mfa_email_factor_enabled,
     accountRecoveryCodesEnabled: w.account_recovery_codes_enabled,
+    // Copied only when present: a server from before these switches says
+    // nothing, which is not the same as "off".
+    ...(w.backup_email_enabled !== undefined ? { backupEmailEnabled: w.backup_email_enabled } : {}),
+    ...(w.challenge_questions_enabled !== undefined ? { challengeQuestionsEnabled: w.challenge_questions_enabled } : {}),
     passwordSignupEnabled: w.password_signup_enabled,
     socialSignupEnabled: w.social_signup_enabled,
     passkeyAttestation: w.passkey_attestation,

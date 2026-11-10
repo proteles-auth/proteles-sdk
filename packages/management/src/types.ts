@@ -146,6 +146,19 @@ export interface Tenant extends TenantSummary {
    */
   accountRecoveryCodesEnabled: boolean;
   /**
+   * Whether people may add a backup email address: a second address of their
+   * own, proved by a link, that their security notices and password links
+   * also go to. It cannot be used to sign in. Absent from a server older than
+   * backup addresses.
+   */
+  backupEmailEnabled?: boolean;
+  /**
+   * Whether people may set challenge questions on their account page, asked as
+   * well as a reset link or recovery code, never instead of one. Absent from a
+   * server older than challenge questions.
+   */
+  challengeQuestionsEnabled?: boolean;
+  /**
    * Whether a person may make their own account on this tenant's hosted
    * sign-up page, with an address and a password.
    */
@@ -529,11 +542,26 @@ export interface UpdateTenantInput {
   /**
    * Saved account-recovery codes: whether an account with a password and no
    * confirmed address may hold a code it can spend to choose a new password. It
-   * never gets past a second factor. Off by default; turning it off withdraws no
-   * code, it stops every one being accepted. Audited as
-   * `tenant.account_recovery_codes_changed`. Send `true` or `false`, or omit it.
+   * never gets past a second factor. On by default for a workspace created
+   * since 2026-10-27; turning it off withdraws no code, it stops every one
+   * being accepted. Audited as `tenant.account_recovery_codes_changed`. Send
+   * `true` or `false`, or omit it.
    */
   accountRecoveryCodesEnabled?: boolean;
+  /**
+   * Backup email addresses: whether people may add a second address of their
+   * own that their security notices and password links also go to. On by
+   * default except in the platform's own workspace; turning it off removes no
+   * address, it sends them nothing until it is on again. Send `true` or
+   * `false`, or omit it.
+   */
+  backupEmailEnabled?: boolean;
+  /**
+   * Challenge questions: whether people may set three on their account page,
+   * asked as well as a reset link or recovery code, never instead of one. Off
+   * by default. Send `true` or `false`, or omit it.
+   */
+  challengeQuestionsEnabled?: boolean;
   /**
    * The hosted sign-up page: whether a person may make their own account here
    * with an address and a password. Off by default; turning it off removes no
