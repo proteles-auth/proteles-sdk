@@ -27,6 +27,32 @@ link below goes to its page on npm. The native SDKs have their own changelog,
   `mfa.self_recovery_completed`, for the emailed second-factor reset. A server
   older than these events refuses a webhook endpoint that subscribes to them
   with a 400.
+- For the server's account recovery (`spec/` is now the server's at
+  `54452c1f`):
+  - `sendUserPasswordResetLink(userId, { tenantId, reason })`, for
+    `POST /api/v1/users/{user_id}/password/reset-link`: mails the user a link
+    to choose a new password, to their own confirmed address (and to their
+    backup address, when they have one). It lasts 24 hours and changes nothing
+    until it is used. The result says where it went (`sentTo.email`,
+    `sentTo.backup`, masked) and whether the mail went (`delivered`). Needs
+    the new strict scope `users:reset_password`, now in `ManagementScope`.
+  - `removeUserBackupEmail(userId, { tenantId, reason })`, for
+    `DELETE /api/v1/users/{user_id}/backup-email`: removes the user's backup
+    address and withdraws every live reset link. Same scope; the reason is
+    required.
+  - `findUser`'s result gains `backupEmail`: the backup address in force,
+    masked, with when it was confirmed, or `null`. Absent from an older
+    server.
+  - `Tenant` and `UpdateTenantInput` gain `backupEmailEnabled` and
+    `challengeQuestionsEnabled`, the workspace's switches for backup addresses
+    and challenge questions. Absent from an older server's `Tenant`.
+  - `WebhookEventName` gains `challenge_questions.locked` and
+    `challenge_questions.cleared`.
+  - `ManagementErrorCode` gains `recent_recovery_change` (409: a tenant key is
+    held off a user for 7 days after a change to how they get back in; wait,
+    do not retry), `unavailable` (503: try again), `reset_mail_limit` (429),
+    and the password link's `machine_account`, `account_deactivated`,
+    `signs_in_with_saml`, `unconfirmed_address` and `no_address` (409).
 
 ### Changed (`@proteles/management`)
 
@@ -37,6 +63,24 @@ link below goes to its page on npm. The native SDKs have their own changelog,
   `offline_access`, between `openid` and `redirect_uris`, which the
   `AppCheckFinding.check` list and `checkApp`'s description now name. No type
   changes.
+
+### Changed (`@proteles/bff`, and every package built on it)
+
+- A sign-in whose userinfo call the authorization server turns away **for
+  now** is no longer a failed sign-in. Proteles answers `/oauth/userinfo`
+  `503` with `Retry-After` when it cannot read its storage, which says nothing
+  about the token. That, another `5xx`, a `408` or `429`, or no answer now gets
+  the page a busy code exchange already gets: `503`, the server's
+  `Retry-After`, "Sign in again in a moment" and a link to a fresh sign-in
+  with the same `returnTo`. It was `?proteles_error=login_failed`. A `401`
+  still ends in `login_failed`.
+
+### Changed (`@proteles/js`)
+
+- `fetchUserInfo` throws an `OAuthError` for every failure, so `retryable`
+  tells "not now" from "no": a non-`2xx` carries the OAuth `error` code and
+  `Retry-After`, as the token endpoint's errors do, and no answer at all is an
+  `OAuthError` with `unreachable` set. It was whatever `fetch` threw.
 
 ## [0.4.0] — 2026-10-22
 
