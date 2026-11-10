@@ -183,16 +183,35 @@ export class OAuthClient {
     return { ok: false, error: errorFromResponse(res, text) };
   }
 
-  /** Fetches the OIDC userinfo claims for an access token. */
+  /**
+   * Fetches the OIDC userinfo claims for an access token.
+   *
+   * Throws an `OAuthError` whose `retryable` tells "not now" from "no". The
+   * server answers `503` with `Retry-After` when it cannot read its storage,
+   * which says nothing about the token; that, any other `5xx`, `408`, `429`
+   * and no answer at all are retryable. A `401` (`invalid_token`) or `403` is
+   * the server's verdict on the token, and is not.
+   */
   async fetchUserInfo(accessToken: string): Promise<UserInfo> {
-    const { res, text } = await this.withTimeout((signal) =>
-      this.fetchFn(this.endpoints.userinfo, {
-        headers: { authorization: `Bearer ${accessToken}` },
-        signal,
-      }),
-    );
+    let res: Response;
+    let text: string;
+    try {
+      ({ res, text } = await this.withTimeout((signal) =>
+        this.fetchFn(this.endpoints.userinfo, {
+          headers: { authorization: `Bearer ${accessToken}` },
+          signal,
+        }),
+      ));
+    } catch (e) {
+      // No answer, which used to escape as whatever `fetch` threw, so a caller
+      // could not tell it from a refused token.
+      throw new OAuthError(`contacting the userinfo endpoint failed: ${(e as Error).message}`, undefined, undefined, {
+        unreachable: true,
+      });
+    }
     if (!res.ok) {
-      throw new OAuthError(`userinfo request failed with HTTP ${res.status}`, undefined, res.status);
+      const { code, retryAfter } = errorFromResponse(res, text);
+      throw new OAuthError(`userinfo request failed with HTTP ${res.status}`, code, res.status, { retryAfter });
     }
     const data = JSON.parse(text) as Record<string, unknown>;
     const sub = typeof data["sub"] === "string" ? (data["sub"] as string) : "";
@@ -283,8 +302,8 @@ export class OAuthClient {
 }
 
 /**
- * The `OAuthError` for a non-`2xx` answer from the token or revocation
- * endpoint: its OAuth `error` code when the body is one, its status, and the
+ * The `OAuthError` for a non-`2xx` answer from the token, revocation or
+ * userinfo endpoint: its OAuth `error` code when the body is one, its status, and the
  * `Retry-After` it carried, if any.
  */
 function errorFromResponse(res: Response, text: string): OAuthError {
