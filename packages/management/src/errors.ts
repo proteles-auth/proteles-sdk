@@ -20,7 +20,15 @@
  * a paid plan or the operator lifts it. `mail_not_configured` (409) comes from
  * `inviteTenantOwner` on a deployment with no mail relay of its own (a
  * tenant's relay does not count): nothing was sent and no invitation was
- * created, so configure the deployment's relay and send it again.
+ * created, so configure the deployment's relay and send it again. The
+ * user actions add eight. `recent_recovery_change` (409, with `until`) holds
+ * a tenant key off a user for 7 days after a change to how they get back in:
+ * wait, do not retry. `unavailable` (503) is the MFA reset's and the password
+ * link's refusal when a read the decision turns on failed: nothing changed,
+ * try again. `reset_mail_limit` (429) is the administrators' mail budget for
+ * one account. The password link answers 409 with `machine_account`,
+ * `account_deactivated`, `signs_in_with_saml`, `unconfirmed_address` or
+ * `no_address` for an account that cannot take a link.
  */
 export type ManagementErrorCode =
   | "invalid_request"
@@ -37,8 +45,16 @@ export type ManagementErrorCode =
   | "owner_unconfirmed"
   | "invitation_quota_exhausted"
   | "mail_not_configured"
+  | "recent_recovery_change"
+  | "reset_mail_limit"
+  | "machine_account"
+  | "account_deactivated"
+  | "signs_in_with_saml"
+  | "unconfirmed_address"
+  | "no_address"
   | "server_error"
-  | "temporarily_unavailable";
+  | "temporarily_unavailable"
+  | "unavailable";
 
 /**
  * A failed Management API request. `code` is the API's stable `error` slug,

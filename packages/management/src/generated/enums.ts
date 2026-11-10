@@ -14,7 +14,7 @@ export type Alg = "RS256";
 export type AppsSelfRegistrationQuotaSource = "default" | "tenant";
 
 /** `error` - declared by AppsUsersError. */
-export type AppsUsersErrorError = "conflict" | "forbidden" | "insufficient_scope" | "invalid_request" | "not_found" | "server_error" | "temporarily_unavailable" | "unauthorized";
+export type AppsUsersErrorError = "conflict" | "forbidden" | "insufficient_scope" | "invalid_request" | "not_found" | "server_error" | "temporarily_unavailable" | "unauthorized" | "unavailable";
 
 /** `error` - declared by AuthError. */
 export type AuthErrorError = "forbidden" | "insufficient_scope" | "owner_unconfirmed" | "unauthorized";
@@ -74,7 +74,13 @@ export type PlanVersionStatus = "draft" | "published";
 export type Provider = "facebook" | "github" | "google" | "linkedin";
 
 /** `error` - declared by RateLimitError. */
-export type RateLimitErrorError = "invitation_quota_exhausted" | "rate_limited";
+export type RateLimitErrorError = "invitation_quota_exhausted" | "rate_limited" | "reset_mail_limit";
+
+/** `reason` - declared by RecentRecoveryChange. */
+export type Reason = "backup_email_added" | "email_changed" | "password_reset_via_backup" | "questions_removed";
+
+/** `error` - declared by RecentRecoveryChange. */
+export type RecentRecoveryChangeError = "recent_recovery_change";
 
 /** `role` - declared by OwnerInvitationSent. */
 export type Role = "owner";
@@ -99,6 +105,9 @@ export type TenantStatusChangedStatus = "active" | "suspended";
 
 /** `token_endpoint_auth_method` - declared by AppsCreateAppRequest. */
 export type TokenEndpointAuthMethod = "client_secret_basic" | "client_secret_post" | "none" | "private_key_jwt" | null;
+
+/** `error` - declared by UsersPasswordLinkRefused. */
+export type UsersPasswordLinkRefusedError = "account_deactivated" | "conflict" | "machine_account" | "mail_not_configured" | "no_address" | "signs_in_with_saml" | "unconfirmed_address";
 
 /** `status` - declared by WebhookDelivery. */
 export type WebhookDeliveryStatus = "delivered" | "pending";

@@ -574,6 +574,7 @@ export type ManagementScope =
   | "users:read"
   | "users:write"
   | "users:reset_mfa"
+  | "users:reset_password"
   | "users:revoke_sessions"
   | "audit:read"
   | "webhooks:read"

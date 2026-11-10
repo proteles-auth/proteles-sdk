@@ -2272,8 +2272,8 @@
       "get": {
         "operationId": "lookupUser",
         "summary": "Look one user up by exact username, with their second-factor status",
-        "description": "The first step of the operator support flow: \"before disarming an\naccount, an operator should be able to confirm they have the right person\nand see what they are about to remove\".\n\nDeliberately a lookup by EXACT username and not a listing, \"so this is not\na bulk export of the tenant's user base\". No prefix search, no\npagination, no enumeration.\n\nIt is also the only way to obtain the `user_id` that the two action\nendpoints below take in their path.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)                                  // :904\nauth.require_any_scope_if_restricted(\n    &[SCOPE_USERS_READ, SCOPE_RESET_MFA, SCOPE_REVOKE_SESSIONS]) // :911\nThe two ACTION scopes are accepted here as well as \"users:read\":\n\"resetting or revoking requires the user id, and this lookup is the only\nway to get one \u2014 a key granted the action but not the lookup could never\nuse what it was given\" (:908-910). Note the asymmetry with the actions\nthemselves, which use the strict `require_scope`: an UNSCOPED tenant key\npasses this guard (held-to-what-you-declare) but is refused by both\nactions.\n",
+        "description": "The first step of the operator support flow: \"before disarming an\naccount, an operator should be able to confirm they have the right person\nand see what they are about to remove\".\n\nDeliberately a lookup by EXACT username and not a listing, \"so this is not\na bulk export of the tenant's user base\". No prefix search, no\npagination, no enumeration.\n\nIt is also the only way to obtain the `user_id` that the three action\nendpoints below take in their path.\n",
+        "x-auth": "auth.tenant_scope(q.tenant_id)                                  // :904\nauth.require_any_scope_if_restricted(\n    &[SCOPE_USERS_READ, SCOPE_RESET_MFA, SCOPE_RESET_PASSWORD,\n      SCOPE_REVOKE_SESSIONS])\nThe three ACTION scopes are accepted here as well as \"users:read\":\n\"resetting, sending a link (R9) or revoking requires the user id, and this\nlookup is the only way to get one \u2014 a key granted the action but not the lookup could never\nuse what it was given\" (:908-910). Note the asymmetry with the actions\nthemselves, which use the strict `require_scope`: an UNSCOPED tenant key\npasses this guard (held-to-what-you-declare) but is refused by all three\nactions.\n",
         "parameters": [
           {
             "name": "username",
@@ -2392,7 +2392,7 @@
       "post": {
         "operationId": "resetUserMfa",
         "summary": "Clear a user's second factors (the lost-phone response)",
-        "description": "\"The way back in for someone who has lost both their authenticator and\ntheir recovery codes. It is a backdoor by design, so it is: gated behind\nan explicit scope, strictly tenant-scoped, audited at warning severity\nwith a required reason, and limited to *second* factors \u2014 it never touches\nthe primary credential, so it can weaken an account but never strand its\nowner\".\n\nWhat it does, in order: reads whether a confirmed TOTP\nenrolment and a pending one exist, **revokes every session first**, then\ndisables TOTP, then deletes every passkey. Revocation comes first and\nis part of the reset itself, so that \"reset without revoking\" is not\npossible \u2014 without it \"the cookie that survived the reset could enrol a\nbrand new factor in one POST, with nothing to present, and that factor\noutlived everything the operator had just cleared\".\n\nUnder a `required` tenant MFA policy the user meets forced enrolment at\ntheir next sign-in, which is the intended landing.\n\nSide effects beyond the response: an `mfa.admin_reset` audit row at\n`warning` severity carrying `totp=\u2026 passkeys=\u2026 pending=\u2026 reason=\u2026`,\nand a best-effort `mfa.admin_reset` webhook fired AFTER the\naudit row because \"the reset has already happened and must stand whether\nor not anyone can be told about it\". A webhook failure does\nnot affect the response.\n",
+        "description": "\"The way back in for someone who has lost both their authenticator and\ntheir recovery codes. It is a backdoor by design, so it is: gated behind\nan explicit scope, strictly tenant-scoped, audited at warning severity\nwith a required reason, and limited to *second* factors \u2014 it never touches\nthe primary credential, so it can weaken an account but never strand its\nowner\".\n\nWhat it does, in order: reads whether a confirmed TOTP\nenrolment and a pending one exist, **revokes every session first**, then\ndisables TOTP, then deletes every passkey. Revocation comes first and\nis part of the reset itself, so that \"reset without revoking\" is not\npossible \u2014 without it \"the cookie that survived the reset could enrol a\nbrand new factor in one POST, with nothing to present, and that factor\noutlived everything the operator had just cleared\".\n\nUnder a `required` tenant MFA policy the user meets forced enrolment at\ntheir next sign-in, which is the intended landing.\n\nSide effects beyond the response: an `mfa.admin_reset` audit row at\n`warning` severity carrying `totp=\u2026 passkeys=\u2026 pending=\u2026 reason=\u2026`,\nand a best-effort `mfa.admin_reset` webhook fired AFTER the\naudit row because \"the reset has already happened and must stand whether\nor not anyone can be told about it\". A webhook failure does\nnot affect the response. A second-factor reset the user asked for by email\nand is waiting out is called off (`mfa.self_recovery_cancelled` with\n`reason=administrator_reset`), and the user is mailed a notice.\n\nWho may be reset (since R8, one rule with the console's person page): a\n**tenant key** removes no factors of somebody who administers the\nworkspace (403 `forbidden`; an owner does that in the console), and is\nheld off for 7 days after the user's email address changed, their\nchallenge questions were removed, a backup email address was added or their\npassword was reset with a link sent to their backup address\n(409 `recent_recovery_change`). Either\nrefusal writes `user.admin_reset_refused` against the user and mails them\nthat an administrator was stopped, at most once a day. The platform token\nis neither: it is the operator's backstop.\n",
         "x-auth": "auth.tenant_scope(req.tenant_id)              // :958\nauth.require_scope(SCOPE_RESET_MFA)           // :962  (\"users:reset_mfa\")\nSTRICT, not held-to-what-you-declare: an UNSCOPED tenant key is REFUSED.\n\"Keys created before this endpoint existed were never granted the power to\ndisarm an account, and silently handing it to them would be a privilege\nescalation introduced by a deploy\" (:68-74). Pinned by\ntests/mfa_admin_reset.rs.\n",
         "x-rate-limit": "Its own tight bucket, \"management_user_action\", matched AHEAD of the\ngeneral `/api/v1/` arm: RATE_LIMIT_USER_ACTION_PER_MIN, default 10 per\nminute (rate_limit/mod.rs, config.rs). \"Without it, a key that\nhas legitimately been granted `users:reset_mfa` can disarm an entire\ntenant account by account as fast as the network allows\"\n(rate_limit/mod.rs).\n",
         "parameters": [
@@ -2453,7 +2453,14 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "`insufficient_scope` or `forbidden`, for the causes every operation shares (see the `Forbidden` response). And, since R8, `forbidden` \u2014 \"this user administers the workspace; an owner removes their second factors in the console\" \u2014 for a **tenant key** whose user is an owner or administrator of the workspace. Nothing is removed; `user.admin_reset_refused` is written against the user, who is mailed that an administrator was stopped (at most once a day). The platform token is never refused this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
           },
           "404": {
             "description": "`not_found` \u2014 \"no such user in this tenant\". The lookup is\ntenant-scoped, so a foreign user id NOT accompanied by an explicit\nforeign `tenant_id` reaches here rather than 403. As with the lookup, a\ndatabase failure also surfaces as 404. The same status with \"the management API is disabled\" means the\ncontrol plane is off.\n",
@@ -2468,8 +2475,291 @@
           "429": {
             "$ref": "#/components/responses/RateLimitedUserAction"
           },
+          "409": {
+            "description": "`recent_recovery_change` \u2014 a **tenant key**, within 7 days of the user's email address changing, their challenge questions being removed, a backup email address being added or their password being reset with a link sent to their backup address: moving where recovery mail goes and then asking the desk is what a takeover looks like. Carries `until` (RFC 3339, when the hold ends) and `reason` (`email_changed`, `questions_removed`, `backup_email_added` or `password_reset_via_backup`). Nothing is removed; the refusal is recorded and told as the 403's is. An owner can still remove them in the console, after a warning; the platform token is not held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentRecoveryChange"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`unavailable` \u2014 a **tenant key** only: whether the user administers the workspace, or their recent changes, could not be read. Refused rather than guessed: nothing was changed; try again. The platform token is judged on neither and reads neither.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
           "500": {
-            "description": "`server_error` \u2014 \"could not reset second factors\", when the reset itself fails. Nothing has been audited or notified at that point.",
+            "description": "`server_error` \u2014 \"could not reset second factors\", when the reset itself fails. Some of it may have happened: the user may already be signed out and some factors removed. One `mfa.admin_reset` row marked `incomplete=true` records who acted and why; nothing else is recorded, sent or notified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/backup-email": {
+      "delete": {
+        "operationId": "removeUserBackupEmail",
+        "summary": "Remove a user's backup email address",
+        "description": "The console's **Remove backup address**, by the Management API (R12), through the same code. The user's backup email address is removed and **every live password reset link the account holds is withdrawn** \u2014 the ones mailed to the email address as well as the backup's. Do this first when someone says their personal mailbox was taken over, then send them a password link. The caller can only remove a backup: adding or changing one is the user's own, on their account page.\n\nThe user is told at their own addresses (\"An administrator removed {addr} as the backup email address on your account\u2026\"), never who or why; the address removed is told it is no longer a backup address, while the workspace has backup addresses on.\n\nSide effects: one `backup_email.removed_by_administrator` audit row at `warning` severity, keyed to the user, with `by=tenant-api-key` or `by=platform-token`, the `reason` and, for the platform token, the asserted operator; never the address. No webhook fires (the user is told directly).\n\n**Who may remove whose** (one rule with the console's person page): a tenant key removes the backup of anybody who neither owns nor administers the workspace, and is held off for 7 days after a change to how the user gets back in (409). Nobody in a workspace removes an owner's backup; the platform token may remove anybody's and is never held: it is the operator's backstop.",
+        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_RESET_PASSWORD)   (\"users:reset_password\")\nSTRICT: an UNSCOPED tenant key is REFUSED, and so is a key holding only\n\"users:reset_mfa\". Where a user's reset links go is this scope's business.\n",
+        "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset, the\nsession revocation and the password link: RATE_LIMIT_USER_ACTION_PER_MIN,\ndefault 10/min (rate_limit/mod.rs).\n",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "description": "A non-UUID is a plain-text 400. Authentication is checked first, so a\nbad credential beats a bad UUID \u2014 401 wins.\n",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Proteles-Operator",
+            "in": "header",
+            "required": false,
+            "description": "Asserted operator, recorded on the `backup_email.removed_by_administrator` audit row beside the credential. Platform token only; a tenant key's header is ignored and warn-logged. Charset `[A-Za-z0-9._\\-@+:%]`, 1-256 bytes; anything else, or a repeated header, is recorded as `(rejected)`.\n",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "A body that cannot be read \u2014 malformed JSON, a wrong type, a content type other than JSON, or an unknown key \u2014 is a 400 \"invalid JSON body\" and changes nothing. An absent body is a request with no reason (400).\n",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsersBackupRemovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Removed (`removed: true`), or there was nothing to remove (`removed: false`, nothing changed). A machine account has no backup and answers `removed: false`.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersBackupRemovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`:\n  * \"invalid JSON body\" \u2014 a body that is present and cannot be read, see requestBody above; checked first\n  * \"tenant_id is required when using the platform token\"\n  * \"a reason is required and is recorded in the audit log\"\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "`insufficient_scope` or `forbidden`, for the causes every operation shares (see the `Forbidden` response). And `forbidden` for a **tenant key** whose user owns the workspace (\"this user owns the workspace; nobody in it removes an owner's backup address, only they can\") or administers it (\"this user administers the workspace; an owner removes their backup address in the console\"). Nothing is removed; `user.admin_reset_refused` (`what=backup_removal`) is written against the user, who is mailed that an administrator was stopped (at most once a day). The platform token is never refused this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` \u2014 \"no such user in this tenant\". The lookup is tenant-scoped, so another workspace's user is not found. The same status with \"the management API is disabled\" means the control plane is off.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`recent_recovery_change` \u2014 a **tenant key**, within 7 days of the user's email address changing, their challenge questions being removed, a backup email address being added or their password being reset with a link sent to their backup address. Carries `until` and `reason`. Nothing is removed; the refusal is recorded and told as the 403's is. An owner can still remove it in the console, after a warning; the platform token is not held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentRecoveryChange"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitedUserAction"
+          },
+          "500": {
+            "description": "`server_error` \u2014 \"could not remove the backup address; nothing changed\", when the removal itself fails.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`unavailable` \u2014 a **tenant key** only: whether the user administers the workspace, or their recent changes, could not be read. Nothing was changed; try again. The platform token reads neither.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/password/reset-link": {
+      "post": {
+        "operationId": "sendUserPasswordResetLink",
+        "summary": "Mail a user a link to choose a new password",
+        "description": "The console's **Send the link**, by the Management API (R9), through the same code. A link to choose a new password goes to the user's own confirmed email address, and a separate link to their backup email address when one is in force (R11) — the caller decides *whether* a link goes, never *where*, and never sees it. It lasts **24 hours** and works once. Until it is used nothing about the account changes: the password keeps working and nobody is signed out. Using it sets the password and ends every session, as any reset link does.\n\nThe mail, subject \"Choose a new {app} password\", says an administrator of the workspace sent it, and never who or why. The link points at the workspace's own sign-in host.\n\nSide effects: one `password.admin_reset_requested` audit row at `warning` severity, keyed to the user, with `by=tenant-api-key` or `by=platform-token`, `expires_at`, the optional `reason` and, for the platform token, the asserted operator; never the address. When the link is used, `password.reset_completed` says `link_issued_by`. A link the user asks for at `/account/forgot` does not withdraw this one; this one withdraws every live link the account held. No webhook fires: the user is told directly, by the mail.\n\n**Who may be sent one** (one rule with the console's person page): a tenant key may send a link to anybody in its workspace, owners and administrators included, because the link goes only to their own mailbox. A key is held off for 7 days after the user's email address changed, their challenge questions were removed, a backup email address was added or their password was reset with a link sent to their backup address (409 `recent_recovery_change`); that refusal is recorded against the user (`user.admin_reset_refused`) and they are mailed that an administrator was stopped, at most once a day. The platform token is never held: it is the operator's backstop.\n\n**Do not mint `users:reset_password` keys for the platform's own workspace**, where the console lets only owners act on anybody. Its keys page does not offer the scope, and refuses a post that names it; only the platform token could mint one there.",
+        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_RESET_PASSWORD)   (\"users:reset_password\")\nSTRICT: an UNSCOPED tenant key is REFUSED, and so is a key holding only\n\"users:reset_mfa\". The endpoint is new, so no key minted before it was\never able to do this, and inheriting it on deploy would be an escalation.\nWithheld from sign-up; an owner mints it at /admin/keys, behind step-up,\nonce a workspace made at sign-up is paid or approved (TP-13).\n",
+        "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset and the\nsession revocation: RATE_LIMIT_USER_ACTION_PER_MIN, default 10/min\n(rate_limit/mod.rs). Apart from it, the administrators' own mail budget for\none account, 3 an hour and 10 a day, counted apart from the user's own\nrequests: 429 `reset_mail_limit`.\n",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "description": "A non-UUID is a plain-text 400. Authentication is checked first, so a\nbad credential beats a bad UUID — 401 wins.\n",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Proteles-Operator",
+            "in": "header",
+            "required": false,
+            "description": "Asserted operator, recorded on the `password.admin_reset_requested` audit row beside the credential. Platform token only; a tenant key's header is ignored and warn-logged. Charset `[A-Za-z0-9._\\-@+:%]`, 1-256 bytes; anything else, or a repeated header, is recorded as `(rejected)`.\n",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional: an absent body is an empty one. A body that is present and cannot be read — malformed JSON, a wrong type, a content type other than JSON, or an unknown key — is a 400 \"invalid JSON body\" and sends nothing.\n",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsersPasswordLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The link was made and recorded, and the mail handed to the relay. `delivered` says whether the relay took it; `false` means the link exists and the mail did not go, so send another later.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersPasswordLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`:\n  * \"invalid JSON body\" — a body that is present and cannot be read, see requestBody above; checked first\n  * \"tenant_id is required when using the platform token\"\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "`insufficient_scope` or `forbidden`, for the causes every operation shares (see the `Forbidden` response). The scope is strict: an unscoped key, and a key holding only `users:reset_mfa`, get `insufficient_scope`. A tenant key is never refused for who the user is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — \"no such user in this tenant\". The lookup is tenant-scoped, so another tenant's user id not accompanied by an explicit foreign `tenant_id` reaches here rather than 403. The same status with \"the management API is disabled\" means the control plane is off.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing was sent. Branch on `error`:\n  * `machine_account`, `account_deactivated`, `signs_in_with_saml`, `unconfirmed_address`, `no_address` — the account cannot take a link: a link goes only to a confirmed address of an active person, not a machine account, who does not sign in through the workspace's SAML identity provider, the rule `/account/forgot` mails by (an account with no password yet is sent one, and it sets their first);\n  * `mail_not_configured` — the workspace cannot send mail, checked before anything is made;\n  * `conflict` — the workspace is suspended, so its sign-in pages do not resolve (the platform token only; a suspended workspace's keys are refused at the door);\n  * `recent_recovery_change` — a **tenant key**, within 7 days of the user's email address changing, their challenge questions being removed, a backup email address being added or their password being reset with a link sent to their backup address. Carries `until` and `reason`; the refusal is recorded and the user told. An owner can still send one from the console, after a warning; the platform token is not held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/UsersPasswordLinkRefused"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecentRecoveryChange"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Two causes, told apart by `error`:\n  * `rate_limited` — the network's budget for acting on users, shared with the MFA reset and the session revocation (see `RateLimitedUserAction`);\n  * `reset_mail_limit` — administrators have sent this user 3 password links in the last hour, or 10 today, which is the most one account is sent. Counted apart from the links the user asks for themselves. `Retry-After` is 3600: the hour; the day's limit may still refuse then. Nothing was sent.\n",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds before retrying: the bucket's refill for `rate_limited`, 3600 for `reset_mail_limit`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`server_error` — the link could not be counted, made or recorded, or this deployment declares no tenant base host to point it at. Nothing was sent.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppsUsersError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`unavailable` — how the user signs in (whether through SAML), or for a **tenant key** their recent changes, could not be read. Refused rather than guessed: nothing was sent; try again. The platform token reads no recent changes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2487,7 +2777,7 @@
         "summary": "End every session and refresh token a user holds (the compromise response)",
         "description": "Distinct from the MFA reset, which also revokes: this one leaves the\naccount's factors alone. That is the difference between \"someone has their\nsession\" and \"they have lost their phone\", and conflating them makes the\ncompromise response destroy credentials the user still holds and will need\nto get back in.\n\nWhat is actually killed: \"sessions, the two half-login cookies, refresh\ntokens, authorization codes and device codes \u2014 anything issued at or\nbefore the returned instant is refused from the next request onward, on\nevery replica, with no cache to go stale\". Access tokens already minted\nare refused at introspection and userinfo too; only an API that verifies\nthe JWT without asking this server accepts one until it expires.\nThe response says so in `note` rather than letting \"revoked\" imply more\nthan it does.\n\nSide effect: a `sessions.revoked` audit row at `warning` severity carrying\nthe reason and the acting credential. No webhook is fired \u2014 unlike the MFA\nreset.\n",
         "x-auth": "auth.tenant_scope(req.tenant_id)                  // :1056\nauth.require_scope(SCOPE_REVOKE_SESSIONS)         // :1060  (\"users:revoke_sessions\")\nSTRICT: an unscoped tenant key is refused. Deliberately a SEPARATE scope\nfrom \"users:reset_mfa\" and not implied by it \u2014 \"an operator who can help\nwith a lost phone should not thereby be able to sign an executive out of\nevery device mid-quarter-end. Granting both to the same key is a decision,\nnot a default\" (:82-88). Pinned by tests/mfa_admin_reset.rs.\n",
-        "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset:\nRATE_LIMIT_USER_ACTION_PER_MIN, default 10/min (rate_limit/mod.rs,\nconfig.rs). A shared budget is deliberate \u2014 \"these guess no secret, so\nspending one budget buys no progress against the other\"\n(rate_limit/mod.rs).\n",
+        "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset and the\npassword link: RATE_LIMIT_USER_ACTION_PER_MIN, default 10/min\n(rate_limit/mod.rs, config.rs). A shared budget is deliberate \u2014 \"these guess no secret, so\nspending one budget buys no progress against the other\"\n(rate_limit/mod.rs).\n",
         "parameters": [
           {
             "name": "user_id",
@@ -4556,7 +4846,7 @@
     "/api/v1/users/search": {
       "get": {
         "summary": "List and filter a tenant's users",
-        "description": "The tenant directory, paged. `GET /api/v1/users?username=` beside this stays\nan **exact** lookup that returns one person with their factor status; this\nreturns many, with less about each.\n\n`q` matches username or email **case-insensitively, by substring**. Absent or\nempty lists everyone. The match is deliberately loose: an administrator has a\nfragment of an address, not an exact handle, and an exact-match search reads\nas \"this user does not exist\".\n\n**Paged, not capped.** A cap truncates silently and looks identical to a\ntenant that simply has fewer users, which is how somebody concludes an\naccount was deleted. `total` counts every match so a caller can say\n\"26-50 of 4,312\". `per_page` is fixed at 25 and is not a parameter - a page\nsize the caller chooses is a page size the caller sets to ten thousand.\n\nRequires `users:read`. The action scopes (`users:reset_mfa`,\n`users:revoke_sessions`) are **not** accepted, unlike on the exact lookup:\nthey are allowed there because a reset needs a user id and that lookup is the\nonly way to get one, which does not extend to paging through a roster.\n\nEvery call is audited as `user.directory_read` with the query, how many came\nback and the total - the same event the tenant console emits for the same\nread, because it is the same read. `q=@` returns everyone with an address, so\npaging this endpoint is how anyone holding the scope reads an entire tenant.\n",
+        "description": "The tenant directory, paged. `GET /api/v1/users?username=` beside this stays\nan **exact** lookup that returns one person with their factor status; this\nreturns many, with less about each.\n\n`q` matches username or email **case-insensitively, by substring**. Absent or\nempty lists everyone. The match is deliberately loose: an administrator has a\nfragment of an address, not an exact handle, and an exact-match search reads\nas \"this user does not exist\".\n\n**Paged, not capped.** A cap truncates silently and looks identical to a\ntenant that simply has fewer users, which is how somebody concludes an\naccount was deleted. `total` counts every match so a caller can say\n\"26-50 of 4,312\". `per_page` is fixed at 25 and is not a parameter - a page\nsize the caller chooses is a page size the caller sets to ten thousand.\n\nRequires `users:read`. The action scopes (`users:reset_mfa`,\n`users:reset_password`, `users:revoke_sessions`) are **not** accepted, unlike on the exact lookup:\nthey are allowed there because a reset needs a user id and that lookup is the\nonly way to get one, which does not extend to paging through a roster.\n\nEvery call is audited as `user.directory_read` with the query, how many came\nback and the total - the same event the tenant console emits for the same\nread, because it is the same read. `q=@` returns everyone with an address, so\npaging this endpoint is how anyone holding the scope reads an entire tenant.\n",
         "operationId": "searchUsers",
         "tags": [
           "Users"
@@ -6996,6 +7286,44 @@
           }
         }
       },
+      "RecentRecoveryChange": {
+        "type": "object",
+        "description": "The 409 `recent_recovery_change`: a tenant key held off acting on a user for 7 days after a change to how that user gets back in (R8, R9, R10, R11): their email address changed, their challenge questions were removed, a backup email address was added, or their password was reset with a link sent to their backup address. Nothing was changed.\n",
+        "required": [
+          "error",
+          "message",
+          "until",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "recent_recovery_change"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable sentence. Not stable; do not match on it."
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the hold ends: 7 days after the change, RFC 3339."
+          },
+          "reason": {
+            "type": "string",
+            "description": "What changed: the user's email address, their challenge questions were removed, a backup email address was added, or their password was reset with a link sent to their backup address.",
+            "enum": [
+              "email_changed",
+              "questions_removed",
+              "backup_email_added",
+              "password_reset_via_backup"
+            ]
+          }
+        }
+      },
       "AppsUsersError": {
         "type": "object",
         "description": "The uniform Management API error body. `error` and `message` are always present, and `detail` when a body could not be read.\nNOT used when a request is refused before it is read (a bad UUID in a\nquery string or path, a missing required query param), or by the 404 for\na host that places no active tenant \u2014 those are plain text with no JSON\nat all.\n",
@@ -7007,7 +7335,7 @@
         "properties": {
           "error": {
             "type": "string",
-            "description": "Stable machine-readable slug. The values reachable on the operations\nthat answer with this body are exactly the eight below.\n",
+            "description": "Stable machine-readable slug. The values reachable on the operations\nthat answer with this body are exactly the nine below. `unavailable` is\nthe 503 of `POST /users/{user_id}/mfa/reset` and\n`POST /users/{user_id}/password/reset-link`: a read the decision turns on failed.\n",
             "enum": [
               "invalid_request",
               "unauthorized",
@@ -7016,7 +7344,8 @@
               "not_found",
               "conflict",
               "server_error",
-              "temporarily_unavailable"
+              "temporarily_unavailable",
+              "unavailable"
             ]
           },
           "message": {
@@ -7810,7 +8139,7 @@
               "$ref": "#/components/schemas/TenantApiKeyScope"
             },
             "minItems": 1,
-            "description": "**Required, with at least one scope**. Omitting\nit, or sending `[]`, is a 400 and mints nothing.\n\nA key that names no scope passes every held-to-what-you-declare check and no\nstrict one, so it can do everything a tenant key can except the operations\nbehind a strict scope: `users:reset_mfa`, `users:revoke_sessions`,\n`users:write` on bulk changes, deactivation and reactivation,\n`domains:write`, `mail:read`, `mail:write`, `usage:read`, `saml:*` and\n`saml-sp:*` (see `TenantApiKeyScope`). Keys minted that way before 2026-10-01\nkeep working, and are listed with `scopes: []`; none is minted any more, by\nthis route or by rotation (`rotateApiKey` answers 409 for one).\n\nDuplicates are accepted; there is no cap on the array's length, only on its\ncontents.\n"
+            "description": "**Required, with at least one scope**. Omitting\nit, or sending `[]`, is a 400 and mints nothing.\n\nA key that names no scope passes every held-to-what-you-declare check and no\nstrict one, so it can do everything a tenant key can except the operations\nbehind a strict scope: `users:reset_mfa`, `users:reset_password`,\n`users:revoke_sessions`, `users:write` on bulk changes, deactivation and reactivation,\n`domains:write`, `mail:read`, `mail:write`, `usage:read`, `saml:*` and\n`saml-sp:*` (see `TenantApiKeyScope`). Keys minted that way before 2026-10-01\nkeep working, and are listed with `scopes: []`; none is minted any more, by\nthis route or by rotation (`rotateApiKey` answers 409 for one).\n\nDuplicates are accepted; there is no cap on the array's length, only on its\ncontents.\n"
           }
         }
       },
@@ -7869,7 +8198,7 @@
       },
       "TenantApiKeyScope": {
         "type": "string",
-        "description": "The complete mintable set. A scope outside this list is refused at mint time, because under held-to-what-you-declare semantics a typo would otherwise produce a key that is bound but can never satisfy its binding \u2014 discovered as a 403 in production instead of a 400 in the operator's face.\n\n**Two enforcement rules, and which applies is per *operation*, not purely per scope.** `x-scope-enforcement` below carries the machine-readable map, checked against the server on every pipeline.\n\n* *held-to-what-you-declare* \u2014 an unscoped key passes; a scoped key is held to its list. Most reads also accept their write sibling, but not all: nothing that takes `users:read` accepts `users:write`, and `GET /tenant/session-lifetime` and `GET /saml/idp-keys` take `tenant:read` alone. Covers `tenant:*`, `apps:*`, `connections:*`, `resources:*`, `users:read`, `audit:read` and `webhooks:*`. The rule is not reserved for old operations: many added later are held too, and an unscoped key could call each of them from the day it shipped.\n* *strict* \u2014 required outright, unscoped keys included. An unscoped key passes every held check, so under a held rule every unscoped key would have the operation; strict is for the ones too sensitive for that \u2014 clearing a user's factors, signing them out everywhere or cutting off their access, pointing a hostname at the tenant, the tenant's mail settings, its usage numbers, and SAML in either direction. Covers `domains:write`, `mail:read`, `mail:write`, `usage:read`, `saml:read`, `saml:write`, `saml-sp:read` and `saml-sp:write`; `saml-sp:write` is also what minting, promoting and revoking the identity-provider signing key take (since 2026-10-10), where `tenant:write` used to do. No strict write scope stands in for its read: a key holding `mail:write`, `saml:write` or `saml-sp:write` still needs the matching read scope to read.\n\n**Three scopes are enforced both ways**, which is the part a per-scope reading gets wrong.\n\n`users:write` is held on `POST /users`, `POST /users/invite` and the service-account route \u2014 creating a user is additive \u2014 and strict on `POST /users/bulk`, `POST /users/{id}/deactivate` and `POST /users/{id}/reactivate`, because denying somebody access to their account is not.\n\n`users:reset_mfa` and `users:revoke_sessions` are strict on the operations they name, and *held* on `GET /users`, the lookup by `username`, which accepts any of them or `users:read`. So each doubles as a read grant for the user it is about to act on: a key scoped only to reset a factor can still look up whose factor it is. Classifying them strict-only misdescribes that route.",
+        "description": "The complete mintable set. A scope outside this list is refused at mint time, because under held-to-what-you-declare semantics a typo would otherwise produce a key that is bound but can never satisfy its binding \u2014 discovered as a 403 in production instead of a 400 in the operator's face.\n\n**Two enforcement rules, and which applies is per *operation*, not purely per scope.** `x-scope-enforcement` below carries the machine-readable map, checked against the server on every pipeline.\n\n* *held-to-what-you-declare* \u2014 an unscoped key passes; a scoped key is held to its list. Most reads also accept their write sibling, but not all: nothing that takes `users:read` accepts `users:write`, and `GET /tenant/session-lifetime` and `GET /saml/idp-keys` take `tenant:read` alone. Covers `tenant:*`, `apps:*`, `connections:*`, `resources:*`, `users:read`, `audit:read` and `webhooks:*`. The rule is not reserved for old operations: many added later are held too, and an unscoped key could call each of them from the day it shipped.\n* *strict* \u2014 required outright, unscoped keys included. An unscoped key passes every held check, so under a held rule every unscoped key would have the operation; strict is for the ones too sensitive for that \u2014 clearing a user's factors, mailing them a link to choose a new password, signing them out everywhere or cutting off their access, pointing a hostname at the tenant, the tenant's mail settings, its usage numbers, and SAML in either direction. Covers `domains:write`, `mail:read`, `mail:write`, `usage:read`, `saml:read`, `saml:write`, `saml-sp:read` and `saml-sp:write`; `saml-sp:write` is also what minting, promoting and revoking the identity-provider signing key take (since 2026-10-10), where `tenant:write` used to do. No strict write scope stands in for its read: a key holding `mail:write`, `saml:write` or `saml-sp:write` still needs the matching read scope to read.\n\n**Four scopes are enforced both ways**, which is the part a per-scope reading gets wrong.\n\n`users:write` is held on `POST /users`, `POST /users/invite` and the service-account route \u2014 creating a user is additive \u2014 and strict on `POST /users/bulk`, `POST /users/{id}/deactivate` and `POST /users/{id}/reactivate`, because denying somebody access to their account is not.\n\n`users:reset_mfa`, `users:reset_password` and `users:revoke_sessions` are strict on the operations they name, and *held* on `GET /users`, the lookup by `username`, which accepts any of them or `users:read`. So each doubles as a read grant for the user it is about to act on: a key scoped only to reset a factor can still look up whose factor it is. Classifying them strict-only misdescribes that route.",
         "enum": [
           "tenant:read",
           "tenant:write",
@@ -7880,6 +8209,7 @@
           "users:read",
           "users:write",
           "users:reset_mfa",
+          "users:reset_password",
           "users:revoke_sessions",
           "audit:read",
           "webhooks:read",
@@ -7923,6 +8253,7 @@
           "both": [
             "users:write",
             "users:reset_mfa",
+            "users:reset_password",
             "users:revoke_sessions"
           ]
         }
@@ -8053,8 +8384,10 @@
           "attestation_ca_count",
           "mfa_email_factor_enabled",
           "account_recovery_codes_enabled",
+          "backup_email_enabled",
           "password_signup_enabled",
           "social_signup_enabled",
+          "challenge_questions_enabled",
           "max_members",
           "member_count",
           "owner_count",
@@ -8132,7 +8465,7 @@
             "format": "int64",
             "minimum": 1,
             "maximum": 720,
-            "description": "How long after a user proves their mailbox their second factors are\ncleared, in hours. `null` \u2014 the default, and what every tenant that\npredates this has \u2014 means the tenant does not offer self-service\nrecovery at all and a user who has lost every factor still needs an\noperator.\n\nNull rather than `0` or `false`, because off is the *absence* of the\nsetting: turning it off removes the setting rather than storing a\nzero, so a\ntenant that turned this on and off again is indistinguishable from\none that never asked.\n\nA stored value that is not a positive integer reads as `null` here.\nThat is the direction a corrupt setting must fail in: it can only\nwithdraw the feature, never switch it on for a tenant that did not\nask for it.\n"
+            "description": "How long after a user proves their mailbox their second factors are\ncleared, in hours, or `null` when the tenant does not offer self-service\nrecovery at all and a user who has lost every factor needs an\nowner or administrator of the workspace to remove them in the console\n(R8; in the platform's own workspace, whose administrators act on nobody,\nan owner), or a reset through `POST /users/{user_id}/mfa/reset`.\n\n**On by default** (2026-10-27): `72` by default for a workspace created\nafter migration 0202, which also switched on every existing workspace\nexcept the platform's own and those whose last recorded choice was off.\nThe platform's own tenant reads `null` until its operator turns it on.\nAn owner changes it in the console, under Settings \u2192 Account recovery;\nan owner or administrator waits at least 168 hours whatever this says.\n\nNull rather than `0` or `false`, because off is no wait at all: `null`\nis off, and turning it off drops every waiting reset. The column's\nCHECK holds a stored value to 1\u2013720, so nothing else can be read.\n"
           },
           "passkey_attestation": {
             "type": "string",
@@ -8173,9 +8506,13 @@
             "type": "boolean",
             "description": "Whether users in this tenant may arm a code mailed to their address as a second factor. Off unless the tenant turned it on. Always present, including when false: an operator reading these settings is deciding about a factor, and an absent key would read as \"not a thing this server has\" rather than \"a thing you have not enabled\". It does not satisfy `mfa_policy: \"passkey\"` \u2014 a mailed code is not phishing-resistant."
           },
+          "backup_email_enabled": {
+            "type": "boolean",
+            "description": "Whether people in this tenant may add a backup email address: a second address of their own, proved by a link, that their account's security notices also go to. It cannot be used to sign in. On by default (migration 0204), except in the platform's own workspace. Off keeps the addresses people added and sends them nothing. An owner changes it in the console, under Settings \u2192 Account recovery. Always present, for `mfa_email_factor_enabled`'s reason."
+          },
           "account_recovery_codes_enabled": {
             "type": "boolean",
-            "description": "Whether accounts in this tenant with no confirmed email address may hold a saved account-recovery code \u2014 shown once, kept offline, and spent at `/account/recover` to choose a new password. Off unless the tenant turned it on, and always present, for `mfa_email_factor_enabled`'s reason."
+            "description": "Whether accounts in this tenant with no confirmed email address may hold a saved account-recovery code \u2014 shown once, kept offline, and spent at `/account/recover` to choose a new password. On by default (2026-10-27): true for a workspace created after migration 0202, which also switched on every existing workspace except the platform's own, those whose last recorded choice was off, and those that had it off while holding a saved code. An owner changes it in the console, under Settings \u2192 Account recovery. Always present, for `mfa_email_factor_enabled`'s reason."
           },
           "password_signup_enabled": {
             "type": "boolean",
@@ -8184,6 +8521,10 @@
           "social_signup_enabled": {
             "type": "boolean",
             "description": "Whether a first sign-in through one of this tenant's social connections makes an account. Off, a person who already has an account still signs in that way: by an identity already linked, or one linked on an address both sides verified. Off for a new tenant, and always present."
+          },
+          "challenge_questions_enabled": {
+            "type": "boolean",
+            "description": "Whether people in this tenant may set challenge questions on their account page: three of eight curated questions, asked as well as a password reset link, a saved recovery code or the second-factor reset link \u2014 never instead of one \u2014 and two of the three must match. Off unless the tenant turned it on, and always present, for `mfa_email_factor_enabled`'s reason."
           },
           "plan": {
             "$ref": "#/components/schemas/Plan"
@@ -8414,7 +8755,7 @@
             "format": "int64",
             "minimum": 1,
             "maximum": 720,
-            "description": "Turn self-service second-factor recovery on, change its delay, or\nturn it off. **Three-state**, like `max_self_registered_clients`:\n\n* field **absent** \u2192 leave the setting alone;\n* `null` \u2192 turn the feature off;\n* an integer \u2192 turn it on with that delay, in hours.\n\n`0` is a **400**, not a synonym for `null`. A zero-hour window is an\nimmediate clearance wearing the delay's name \u2014 the mail saying\n\"this is happening, sign in to stop it\" would arrive after the\nfactors were already gone. Someone who types `0` has misunderstood\nthe feature, and a 200 would leave them believing they had a safety\nwindow.\n\nBounded above by 720 \u2014 thirty days,\npast which the delay stops being a safety window and becomes a\nrefusal wearing a countdown's clothes.\n\nUnlike the quota fields below, this is **not** platform-only. It is\nthe tenant's own security posture, the same class of decision as\n`mfa_policy`, and the tenant is who bears it.\n\nAudited as `mfa.self_recovery_changed` (warning) in every direction,\nincluding off.\n\n**`null` drops every request in flight**, in the same transaction as\nthe setting. Each one that was counting down gets an\n`mfa.self_recovery_cancelled` row (info) with\n`reason=workspace_turned_it_off`, and its account is mailed that nothing\nwill be removed. An owner or administrator of the workspace waits at\nleast seven days whatever this says.\n"
+            "description": "Turn self-service second-factor recovery on, change its delay, or\nturn it off. It is on by default \u2014 `72` for a workspace created after\nmigration 0202 \u2014 and an owner can change it in the console too.\n**Three-state**, like `max_self_registered_clients`:\n\n* field **absent** \u2192 leave the setting alone;\n* `null` \u2192 turn the feature off;\n* an integer \u2192 turn it on with that delay, in hours.\n\n`0` is a **400**, not a synonym for `null`. A zero-hour window is an\nimmediate clearance wearing the delay's name \u2014 the mail saying\n\"this is happening, sign in to stop it\" would arrive after the\nfactors were already gone. Someone who types `0` has misunderstood\nthe feature, and a 200 would leave them believing they had a safety\nwindow.\n\nBounded above by 720 \u2014 thirty days,\npast which the delay stops being a safety window and becomes a\nrefusal wearing a countdown's clothes.\n\nUnlike the quota fields below, this is **not** platform-only. It is\nthe tenant's own security posture, the same class of decision as\n`mfa_policy`, and the tenant is who bears it.\n\nAudited as `mfa.self_recovery_changed` (warning) in every direction,\nincluding off.\n\n**`null` drops every request in flight**, in the same transaction as\nthe setting. Each one that was counting down gets an\n`mfa.self_recovery_cancelled` row (info) with\n`reason=workspace_turned_it_off`, and its account is mailed that nothing\nwill be removed. An owner or administrator of the workspace waits at\nleast seven days whatever this says.\n"
           },
           "passkey_attestation": {
             "type": "string",
@@ -8446,9 +8787,13 @@
             "type": "boolean",
             "description": "Turns the email second factor on or off for this tenant. Off by default. Know what it buys: the address it mails a code to is the address password recovery writes to, so against somebody holding the mailbox it adds nothing \u2014 what it defends is a leaked password database, credential stuffing, and passwords reused elsewhere, which is most of what happens to most accounts. Audited as `tenant.mfa_email_factor_changed`."
           },
+          "backup_email_enabled": {
+            "type": "boolean",
+            "description": "Turns backup email addresses on or off for this tenant: whether people may add a second address of their own that their security notices also go to. On by default except in the platform's own workspace, and an owner can change it in the console too. Turning it off removes no address \u2014 the ones people added are kept and sent nothing until it is turned on again. Audited as `tenant.backup_emails_changed`."
+          },
           "account_recovery_codes_enabled": {
             "type": "boolean",
-            "description": "Turns saved account-recovery codes on or off for this tenant. Off by default. A code is offered only to an account with a password and no confirmed address; it sets a new password and never gets past a second factor. Turning it off withdraws no code \u2014 it stops every one being accepted until it is turned on again. Audited as `tenant.account_recovery_codes_changed`."
+            "description": "Turns saved account-recovery codes on or off for this tenant. On by default for a workspace created after migration 0202, and an owner can change it in the console too. A code is offered only to an account with a password and no confirmed address; it sets a new password and never gets past a second factor. Turning it off withdraws no code \u2014 it stops every one being accepted until it is turned on again. Audited as `tenant.account_recovery_codes_changed`."
           },
           "password_signup_enabled": {
             "type": "boolean",
@@ -8457,6 +8802,10 @@
           "social_signup_enabled": {
             "type": "boolean",
             "description": "Turns account-making by social sign-in on or off for this tenant. Off, a first sign-in through a social connection that matches no account is refused, and a person who already has an account still signs in. Off by default for a new tenant. Audited as `tenant.social_signup_changed`."
+          },
+          "challenge_questions_enabled": {
+            "type": "boolean",
+            "description": "Turns challenge questions on or off for this tenant. Off by default. On, people may set three questions on their account page; a new set takes effect after 7 days. They are asked as well as a password reset link, a saved recovery code or the second-factor reset link, never instead of one, so they add a check to recovery and never a way in. Someone who forgets their answers needs them cleared. Turning it off withdraws no set: each is kept and not asked until it is turned on again. Audited as `tenant.challenge_questions_changed`."
           },
           "plan_override": {
             "type": [
@@ -8684,6 +9033,7 @@
           "id",
           "username",
           "email",
+          "backup_email",
           "is_active",
           "mfa"
         ],
@@ -8692,7 +9042,7 @@
           "id": {
             "type": "string",
             "format": "uuid",
-            "description": "The `user_id` to pass to the two action endpoints below."
+            "description": "The `user_id` to pass to the three action endpoints below."
           },
           "username": {
             "type": "string"
@@ -8703,6 +9053,29 @@
               "null"
             ],
             "description": "The key is always present and may be null."
+          },
+          "backup_email": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The user's backup email address when one is in force (confirmed, and the workspace has backup addresses on), **masked**: a password link goes to it as well as to `email`. `null` when there is none, when the workspace has them off, or when it could not be read. The full address is never returned.",
+            "required": [
+              "address",
+              "confirmed_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "address": {
+                "type": "string",
+                "description": "Masked: the first character of the local part, `***@`, then the domain (`a***@example.com`)."
+              },
+              "confirmed_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When its confirmation link was spent, RFC 3339."
+              }
+            }
           },
           "is_active": {
             "type": "boolean"
@@ -8811,6 +9184,156 @@
           }
         },
         "x-fields-deliberately-absent": "`ResetSummary` carries two more facts this response does NOT expose\n(mfa.rs):\n  * `pending_discarded` \u2014 an abandoned enrolment destroyed by the reset.\n    It reaches the audit detail as `pending=` (:987) and the webhook as\n    `pending_enrolment_discarded` (:1011), but has no HTTP field. A caller\n    reading only this body cannot distinguish a plain no-op from one that\n    killed an attacker's staged secret \u2014 the exact case the field was\n    added for (mfa.rs).\n  * `sessions_revoked_at` \u2014 the instant every credential died. Present in\n    the `sessions/revoke` response but not here, even though this endpoint\n    always revokes too (mfa.rs).\n"
+      },
+      "UsersBackupRemovalRequest": {
+        "type": "object",
+        "description": "Unknown fields are refused: this removes the backup and withdraws every live reset link, and a flag it does not have is not one it can honour.\n",
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Required with the platform token \u2014 400 otherwise. Must be the key's own tenant otherwise (403).\n"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required, and not blank. Recorded on `backup_email.removed_by_administrator` with control characters stripped and cut at 200 characters. Never in the mail, never echoed here.\n"
+          }
+        }
+      },
+      "UsersBackupRemovalResponse": {
+        "type": "object",
+        "description": "Whether a backup was removed. Never the address.",
+        "required": [
+          "user_id",
+          "removed",
+          "note"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "removed": {
+            "type": "boolean",
+            "description": "`true` when a backup was removed; `false` when the user had none and nothing changed."
+          },
+          "note": {
+            "type": "string",
+            "description": "A sentence for a person reading the answer. Not stable; do not match on it."
+          }
+        }
+      },
+      "UsersPasswordLinkRequest": {
+        "type": "object",
+        "description": "Unknown fields are refused: the link goes only to the user's own confirmed address, and a field suggesting somewhere else is refused rather than ignored.\n",
+        "additionalProperties": false,
+        "properties": {
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Required with the platform token — 400 otherwise. Must be the key's own tenant otherwise (403).\n"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional. A note for the audit trail, recorded on `password.admin_reset_requested` with control characters stripped and cut at 200 characters. Never in the mail, never echoed here.\n"
+          }
+        }
+      },
+      "UsersPasswordLinkResponse": {
+        "type": "object",
+        "description": "The 202 body: who, where it went, and until when. Never the link.",
+        "required": [
+          "user_id",
+          "username",
+          "sent_to",
+          "expires_at",
+          "delivered"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "sent_to": {
+            "type": "object",
+            "description": "Where the link went.",
+            "required": [
+              "email",
+              "backup"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The user's own confirmed email address, when a link went to it; `null` when it is not confirmed and the only link went to the backup address."
+              },
+              "backup": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The user's backup email address, **masked** (`a***@example.com`: the first character of the local part, then the domain), when a separate link went to it too; `null` when the user has no backup address in force. The full address is never returned."
+              }
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link stops working: 24 hours after it was made, RFC 3339."
+          },
+          "delivered": {
+            "type": "boolean",
+            "description": "Whether the relay took the mail. `false`: the link was made and recorded and the mail did not go."
+          }
+        }
+      },
+      "UsersPasswordLinkRefused": {
+        "type": "object",
+        "description": "A 409 from `POST /users/{user_id}/password/reset-link` other than the hold: the account cannot take a link, the workspace cannot send mail, or it is suspended. Nothing was sent.\n",
+        "required": [
+          "error",
+          "message"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "machine_account",
+              "account_deactivated",
+              "signs_in_with_saml",
+              "unconfirmed_address",
+              "no_address",
+              "mail_not_configured",
+              "conflict"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable sentence. Not stable; do not match on it."
+          }
+        }
       },
       "UsersRevokeSessionsRequest": {
         "type": "object",
@@ -9524,7 +10047,9 @@
           "mfa.self_recovery_completed",
           "app.created",
           "app.updated",
-          "app.deleted"
+          "app.deleted",
+          "challenge_questions.locked",
+          "challenge_questions.cleared"
         ]
       },
       "WebhookReplayOneResult": {
@@ -10054,13 +10579,14 @@
       },
       "RateLimitError": {
         "type": "object",
-        "description": "The body of every 429 from this API. One schema, because every 429 carries the same three fields whichever bucket refused the call. `error_description` and `message` carry the same string; `message` exists for clients that read a generic envelope. `error` is `rate_limited` from the limiter, and `invitation_quota_exhausted` from `POST /users/invite` when a tenant self-service sign-up made has sent its daily allowance of invitations.",
+        "description": "The body of every 429 from this API. One schema, because every 429 carries the same three fields whichever bucket refused the call. `error_description` and `message` carry the same string; `message` exists for clients that read a generic envelope. `error` is `rate_limited` from the limiter; `invitation_quota_exhausted` from `POST /users/invite` when a tenant self-service sign-up made has sent its daily allowance of invitations; and `reset_mail_limit` from `POST /users/{user_id}/password/reset-link` when administrators have sent the user as many password links as one account is sent (3 an hour, 10 a day).",
         "properties": {
           "error": {
             "type": "string",
             "enum": [
               "rate_limited",
-              "invitation_quota_exhausted"
+              "invitation_quota_exhausted",
+              "reset_mail_limit"
             ]
           },
           "error_description": {
@@ -11918,7 +12444,7 @@
         }
       },
       "RateLimitedUserAction": {
-        "description": "`rate_limited` \u2014 default **10/min** (`RATE_LIMIT_USER_ACTION_PER_MIN`), thirty times tighter than the rest of this API.\n\nThe two operations that act on a user's credentials \u2014 clearing their second factors, ending every session they hold \u2014 are metered separately from everything else. Scopes decide whether a key may do this at all; this decides how fast. A key legitimately holding `users:reset_mfa` should not be able to disarm a tenant account by account as fast as the network allows.\n\nIt is a separate budget, not a share of the one the rest of this API draws on: spending either buys no progress against the other. Bulk work against these two operations needs pacing that the rest of the API does not.",
+        "description": "`rate_limited` \u2014 default **10/min** (`RATE_LIMIT_USER_ACTION_PER_MIN`), thirty times tighter than the rest of this API.\n\nThe three operations that act on a user's credentials \u2014 clearing their second factors, ending every session they hold, mailing them a link to choose a new password \u2014 are metered separately from everything else. Scopes decide whether a key may do this at all; this decides how fast. A key legitimately holding `users:reset_mfa` should not be able to disarm a tenant account by account as fast as the network allows.\n\nIt is a separate budget, not a share of the one the rest of this API draws on: spending either buys no progress against the other. Bulk work against these three operations needs pacing that the rest of the API does not.",
         "headers": {
           "Retry-After": {
             "description": "Whole seconds until the bucket refills. Always present on a 429 from this API; the server sets it on every rate-limited response.",
