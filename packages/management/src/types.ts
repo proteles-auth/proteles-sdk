@@ -880,6 +880,22 @@ export interface UserLookup {
   email: string | null;
   isActive: boolean;
   mfa: UserMfaStatus;
+  /**
+   * The user's backup email address, when one is in force (confirmed, and the
+   * workspace has backup addresses on). A password link goes to it as well as
+   * to `email`. `null` when there is none, when the workspace has them off,
+   * or when the server could not read it. Absent from a server older than
+   * backup addresses.
+   */
+  backupEmail?: UserBackupEmail | null;
+}
+
+/** A backup email address, as the API shows it. Never the full address. */
+export interface UserBackupEmail {
+  /** Masked: the first character of the local part, `***@`, then the domain (`a***@example.com`). */
+  address: string;
+  /** When its confirmation link was spent. */
+  confirmedAt: string;
 }
 
 export interface CreateUserInput {
@@ -1051,8 +1067,16 @@ export interface PasswordResetLink {
   userId: string;
   username: string;
   sentTo: {
-    /** The user's own confirmed email address, which the link went to. */
+    /**
+     * The user's own confirmed email address, when a link went to it; `null`
+     * when it is not confirmed and the only link went to the backup address.
+     */
     email: string | null;
+    /**
+     * The user's backup email address, **masked** (`a***@example.com`), when a
+     * separate link went to it too; `null` when they have no backup in force.
+     */
+    backup: string | null;
   };
   /** When the link stops working: 24 hours after it was made. */
   expiresAt: string;
@@ -1063,6 +1087,15 @@ export interface PasswordResetLink {
    * the user did not receive it. Send another later.
    */
   delivered: boolean;
+}
+
+/** Whether removing a user's backup email address removed one. Never the address. */
+export interface BackupEmailRemoval {
+  userId: string;
+  /** `false` when the user had no backup address and nothing changed. */
+  removed: boolean;
+  /** A sentence for a person. Not stable; do not match on it. */
+  note: string;
 }
 
 /** What ending a user's sessions actually did. */
