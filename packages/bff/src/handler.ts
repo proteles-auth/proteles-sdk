@@ -10,7 +10,7 @@
 //! sees the sanitized user object from `/api/auth/me`.
 
 import { JwksCache, OAuthClient, OAuthError, timingSafeEqual, verifyIdToken } from "@proteles/js";
-import type { AuthorizationUrlOptions, IdTokenClaims, TokenResponse } from "@proteles/js";
+import type { AuthorizationUrlOptions, IdTokenClaims, TokenResponse, UserInfo } from "@proteles/js";
 
 import { cookieSecureFromEnv, resolveConfig } from "./config.js";
 import { parseCookies, serializeCookie } from "./cookies.js";
@@ -385,22 +385,25 @@ export class AuthApp {
     const code = url.searchParams.get("code");
     if (!code) return fail("no authorization code in the callback");
 
+    // "Not now" from the authorization server is not a failed sign-in, and it
+    // used to end in `login_failed` like one. The page it gets instead starts
+    // a fresh flow; see `signInBusyPage` for why this code is not tried again.
+    const returnTo = safeReturnTo(flow.returnTo) ?? this.config.postLoginRedirect;
+    const offerFreshSignIn = (e: OAuthError, step: string) => {
+      this.reportError(
+        `the authorization server was busy or unreachable at ${step}, so the user was offered a fresh sign-in: ${e.message}`,
+        "callback",
+      );
+      const again = new URL(`${this.config.basePath}/login`, url.origin);
+      again.searchParams.set("returnTo", returnTo);
+      return signInBusyPage(again.pathname + again.search, e.retryAfter, [clearFlow]);
+    };
+
     let tokens: TokenResponse;
     try {
       tokens = await this.client.exchangeCode({ code, codeVerifier: flow.codeVerifier });
     } catch (e) {
-      // "Not now" from the token endpoint is not a failed sign-in, and it used
-      // to end in `login_failed` like one. The page it gets instead starts a
-      // fresh flow; see `signInBusyPage` for why this code is not tried again.
-      if (e instanceof OAuthError && e.retryable) {
-        this.reportError(
-          `the authorization server was busy or unreachable at the code exchange, so the user was offered a fresh sign-in: ${e.message}`,
-          "callback",
-        );
-        const again = new URL(`${this.config.basePath}/login`, url.origin);
-        again.searchParams.set("returnTo", safeReturnTo(flow.returnTo) ?? this.config.postLoginRedirect);
-        return signInBusyPage(again.pathname + again.search, e.retryAfter, [clearFlow]);
-      }
+      if (e instanceof OAuthError && e.retryable) return offerFreshSignIn(e, "the code exchange");
       // Otherwise almost always a server-to-server problem: a wrong client
       // secret, or a redirect_uri the client isn't registered for.
       return fail(`token exchange or userinfo failed: ${(e as Error).message}`);
@@ -417,7 +420,17 @@ export class AuthApp {
       // app. A verification that can be skipped on failure is
       // one an attacker chooses to fail.
       const claims = await this.verifyIdTokenIfPresent(tokens.idToken, flow.nonce, tokens.accessToken, true);
-      const info = await this.client.fetchUserInfo(tokens.accessToken);
+      let info: UserInfo;
+      try {
+        info = await this.client.fetchUserInfo(tokens.accessToken);
+      } catch (e) {
+        // Since the server's !658, userinfo answers 503 when the server cannot
+        // read its storage, which says nothing about the token. That, another
+        // `5xx`, a `408` or `429`, or no answer is a moment, not a failed
+        // sign-in. A `401` is the server refusing the token, and still fails.
+        if (e instanceof OAuthError && e.retryable) return offerFreshSignIn(e, "userinfo");
+        throw e;
+      }
       // The session's `sub` comes from userinfo, and only the ID token's is
       // signed. OIDC Core §5.3.2: the two MUST be the same, and a response
       // where they are not must not be used.
@@ -445,7 +458,7 @@ export class AuthApp {
     }
 
     const sessionCookie = await this.sessionCookie(session);
-    return redirect(safeReturnTo(flow.returnTo) ?? this.config.postLoginRedirect, 303, [sessionCookie, clearFlow]);
+    return redirect(returnTo, 303, [sessionCookie, clearFlow]);
   }
 
   /**
@@ -1184,9 +1197,10 @@ function tryAgainPage(
 }
 
 /**
- * The page a browser gets from the callback when the code exchange met a busy
- * authorization server — a `503`, a `429`, another `5xx` or a `408`, or no
- * answer at all: `503`, `Retry-After` when the server named a wait, and a link
+ * The page a browser gets from the callback when the code exchange or the
+ * userinfo call met a busy authorization server — a `503`, a `429`, another
+ * `5xx` or a `408`, or no answer at all: `503`, `Retry-After` when the server
+ * named a wait, and a link
  * that starts sign-in again, back to where the user was going. It used to end
  * in `login_failed`, which reads as a wrong password or a broken app, when all
  * the user has to do is sign in again in a moment.

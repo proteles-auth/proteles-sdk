@@ -155,6 +155,11 @@ by an exchange whose answer was lost, which a second presentation would turn
 into a replay: refused, audited, and the tokens the first one minted revoked.
 `invalid_grant` and every other `4xx` still end in `login_failed`.
 
+The userinfo call after the exchange gets the same page for the same answers.
+Proteles answers userinfo `503` with `Retry-After` when it cannot read its
+storage, which says nothing about the token. A `401` there is the server
+refusing the token, and still ends in `login_failed`.
+
 One limit, stated so nobody has to find it. If the answer to a refresh was
 *lost* rather than refused — a timeout or a proxy's `502` after the server had
 already rotated the token — the retry meets `invalid_grant` and the session ends
@@ -259,10 +264,10 @@ authorization server; it defaults to 10 000. Raise it if your AS cold-starts, if
 the network between you is slow, or if a request can land while the server is
 busy with something expensive like minting a new tenant's signing keys. A
 too-tight timeout is worth knowing about because of how it presents: a
-timed-out code exchange shows the user the page that says the sign-in service
-was busy, and a timed-out userinfo call the `?proteles_error=login_failed` that a
-wrong client secret also produces. Neither says "timeout". Check the server-side
-`onError` diagnostic — a timeout says `This operation was aborted`.
+timed-out code exchange or userinfo call shows the user the page that says the
+sign-in service was busy, as a `503` from either does, and offers a fresh
+sign-in. It does not say "timeout". Check the server-side `onError` diagnostic
+— a timeout says `This operation was aborted`.
 
 ## Security notes
 
