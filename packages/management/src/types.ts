@@ -635,11 +635,20 @@ export interface CreateAppInput {
   /**
    * Omitted or empty, the server gives a web app's two grants,
    * `["authorization_code", "refresh_token"]`, so the app is issued refresh
-   * tokens. A server from before October 2026 gives `authorization_code`
+   * tokens. A server from before mid-October 2026 gives `authorization_code`
    * alone; name both to be sure. Name the grants to create a client without
    * `refresh_token`.
    */
   grantTypes?: string[];
+  /**
+   * Omitted or empty, the server gives every app
+   * `["openid", "profile", "email", "offline_access"]`: what `@proteles/bff`
+   * and the framework SDKs built on it ask for, since a sign-in asking for a
+   * scope the app lacks is refused (`invalid_scope`). A server from before
+   * late October 2026 gives the first three alone, so a web app names all
+   * four to be sure. The native SDKs ask for `openid profile email`, so a
+   * native app names those. Named scopes are stored as named.
+   */
   scopes?: string[];
   firstParty?: boolean;
   /**
@@ -2192,8 +2201,8 @@ export type AppCheckLevel = wire.AppCheckFinding["level"];
 /** One thing `checkApp` found. */
 export interface AppCheckFinding {
   /** Which check, for a script to match on: `active`, `refresh_token`,
-   *  `openid`, `redirect_uris`, `post_logout_redirect_uris` or
-   *  `backchannel_logout`. A check may report more than one finding. */
+   *  `openid`, `offline_access`, `redirect_uris`, `post_logout_redirect_uris`
+   *  or `backchannel_logout`. A check may report more than one finding. */
   check: string;
   level: AppCheckLevel;
   /** The finding, in a sentence for a person. */

@@ -66,14 +66,16 @@ targets: [
 
 Ask the tenant's administrator for **one client per app** — not one per
 install — created through the Management API (`POST /api/v1/apps`) with both of
-these, because the API's defaults are neither:
+these named:
 
 - `"token_endpoint_auth_method": "none"` — a **public client**. The default is
   a confidential client with a secret, which an app cannot keep.
-- `"grant_types": ["authorization_code", "refresh_token"]`. The default is
-  `authorization_code` alone, which issues no refresh token, so the user would
-  sign in again every time the access token expired. The `refresh_token`
-  *grant*, not the `offline_access` scope, is what makes the server issue one.
+- `"grant_types": ["authorization_code", "refresh_token"]`. Without the
+  `refresh_token` grant no refresh token is issued, so the user would sign in
+  again every time the access token expired. The default is these same two
+  grants, but a server from before mid-October 2026 gives `authorization_code`
+  alone, so name both. The `refresh_token` *grant*, not the `offline_access`
+  scope, is what makes the server issue one.
 
 And with the app's identity, `"app_identity": {"ios": {"app_id":
 "ABCDE12345.com.example.app"}}`: your Team ID, a dot, and the bundle ID. The
