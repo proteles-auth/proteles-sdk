@@ -251,6 +251,55 @@ test("fetchUserInfo throws OAuthError on a non-200", async () => {
   await assert.rejects(() => client.fetchUserInfo("bad"), OAuthError);
 });
 
+test("fetchUserInfo tells the server's 'try again' from its verdict on the token", async () => {
+  // Since the server's !658, userinfo answers 503 with Retry-After when it
+  // cannot read its storage (docs/access-tokens.md): no verdict on the token.
+  const storage503 = () =>
+    new Response(
+      JSON.stringify({ error: "temporarily_unavailable", error_description: "could not read its storage; retry shortly" }),
+      { status: 503, headers: { "content-type": "application/json", "retry-after": "5", "cache-control": "no-store" } },
+    );
+  for (const [label, respond, retryAfter] of [
+    ["503 with Retry-After", storage503, 5],
+    ["a proxy's 502", () => new Response("<html>bad gateway</html>", { status: 502 }), undefined],
+    ["408", () => new Response(null, { status: 408 }), undefined],
+    ["429", () => new Response(JSON.stringify({ error: "rate_limited" }), { status: 429, headers: { "retry-after": "7" } }), 7],
+  ] as const) {
+    const client = new OAuthClient({ ...baseConfig, fetch: mockFetch(respond).fetch });
+    await assert.rejects(
+      () => client.fetchUserInfo("at"),
+      (e: unknown) => {
+        assert.ok(e instanceof OAuthError, `${label}: an OAuthError`);
+        assert.equal(e.retryable, true, `${label}: retryable`);
+        assert.equal(e.retryAfter, retryAfter, `${label}: the server's Retry-After, and none invented`);
+        return true;
+      },
+    );
+  }
+  const down = new OAuthClient({
+    ...baseConfig,
+    fetch: async () => {
+      throw new TypeError("fetch failed");
+    },
+  });
+  await assert.rejects(
+    () => down.fetchUserInfo("at"),
+    (e: unknown) => e instanceof OAuthError && e.unreachable && e.retryable,
+    "no answer is an unreachable OAuthError, not whatever fetch threw",
+  );
+  for (const status of [401, 403]) {
+    const client = new OAuthClient({
+      ...baseConfig,
+      fetch: mockFetch(() => new Response(JSON.stringify({ error: "invalid_token" }), { status })).fetch,
+    });
+    await assert.rejects(
+      () => client.fetchUserInfo("at"),
+      (e: unknown) => e instanceof OAuthError && e.status === status && !e.retryable && e.code === "invalid_token",
+      `${status} is a verdict, not a moment`,
+    );
+  }
+});
+
 test("revoke never throws: a transport failure resolves, and says the server was unreachable", async () => {
   const fetch: FetchLike = async () => {
     throw new Error("network down");

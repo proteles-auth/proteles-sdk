@@ -897,6 +897,25 @@ test("updateTenant sends accountRecoveryCodesEnabled, false included, and nothin
   assert.ok(!("account_recovery_codes_enabled" in (calls[0]!.body as Record<string, unknown>)));
 });
 
+test("the backup-address and challenge-question switches: false sent, absent unsent, an older server's silence kept", async () => {
+  for (const enabled of [true, false]) {
+    const { client, calls } = make(() => json({ id: "t1", slug: "acme", status: "active" }));
+    await client.updateTenant("t1", { backupEmailEnabled: enabled, challengeQuestionsEnabled: !enabled });
+    assert.deepEqual(calls[0]!.body, { backup_email_enabled: enabled, challenge_questions_enabled: !enabled });
+  }
+  const { client, calls } = make(() => json({ id: "t1", slug: "acme", status: "active" }));
+  const t = await client.updateTenant("t1", { mfaPolicy: "optional" });
+  const body = calls[0]!.body as Record<string, unknown>;
+  assert.ok(!("backup_email_enabled" in body) && !("challenge_questions_enabled" in body));
+  assert.ok(!("backupEmailEnabled" in t) && !("challengeQuestionsEnabled" in t), "absent, not invented as off");
+  const read = make(() =>
+    json({ id: "t1", slug: "acme", status: "active", backup_email_enabled: false, challenge_questions_enabled: true }),
+  );
+  const r = await read.client.getTenant("t1");
+  assert.equal(r.backupEmailEnabled, false);
+  assert.equal(r.challengeQuestionsEnabled, true);
+});
+
 test("updateTenant sends both sign-up switches, false included, and neither when absent", async () => {
   // The two sign-up switches. `false` is how sign-up is closed again, so the
   // falsy-value trap matters here as it does for the factors.
@@ -1354,6 +1373,53 @@ test("the incident path reaches the right endpoints", async () => {
   ]);
 });
 
+test("sendUserPasswordResetLink posts the reason and keeps an undelivered mail visible", async () => {
+  // `delivered: false` means the link exists and the mail did not go. A
+  // mapping that defaulted it, or read it for truthiness into "sent", would
+  // tell an operator the user has a link they never received.
+  const { client, calls } = make(() =>
+    json(
+      {
+        user_id: "u1",
+        username: "alice",
+        sent_to: { email: "alice@example.com", backup: null },
+        expires_at: "2026-11-11T00:00:00Z",
+        delivered: false,
+      },
+      202,
+    ),
+  );
+  const r = await client.sendUserPasswordResetLink("u1", { tenantId: "t1", reason: "ticket 42" });
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(new URL(calls[0]!.url).pathname, "/api/v1/users/u1/password/reset-link");
+  // The server refuses an unknown key with a 400 and sends nothing, so the
+  // body carries exactly what the request schema names.
+  assert.deepEqual(calls[0]!.body, { tenant_id: "t1", reason: "ticket 42" });
+  assert.equal(r.delivered, false);
+  assert.deepEqual(r.sentTo, { email: "alice@example.com", backup: null });
+  assert.equal(r.expiresAt, "2026-11-11T00:00:00Z");
+});
+
+test("sendUserPasswordResetLink's hold is a ManagementError carrying its slug", async () => {
+  const { client } = make(() =>
+    json(
+      {
+        error: "recent_recovery_change",
+        message: "held",
+        until: "2026-11-17T00:00:00Z",
+        reason: "backup_email_added",
+      },
+      409,
+    ),
+  );
+  await assert.rejects(client.sendUserPasswordResetLink("u1"), (err: unknown) => {
+    assert.ok(err instanceof ManagementError);
+    assert.equal(err.status, 409);
+    assert.equal(err.code, "recent_recovery_change");
+    return true;
+  });
+});
+
 test("deactivateUser surfaces a failed session revoke rather than hiding it", async () => {
   // `sessionsRevokedAt: null` on this path does not mean "no sessions" — it
   // means the account was switched off and the revocation did not complete, so
@@ -1400,6 +1466,57 @@ test("findUser maps the second-factor status a caller decides on", async () => {
   // `sms` is the factor an operator most needs to see before a reset: a lost
   // phone is the commonest reason to call, and the lookup used not to say.
   assert.deepEqual(u.mfa, { totp: true, passkeys: 0, recoveryCodesRemaining: 0, email: false, sms: true });
+});
+
+test("findUser maps the masked backup address, and an older server's silence stays silence", async () => {
+  const base = {
+    id: "u1",
+    username: "alice",
+    email: "alice@example.com",
+    is_active: true,
+    mfa: { totp: false, passkeys: 0, recovery_codes_remaining: 0, email: false, sms: false },
+  };
+  let body: Record<string, unknown> = { ...base, backup_email: { address: "a***@example.net", confirmed_at: "2026-11-01T00:00:00Z" } };
+  const { client } = make(() => json(body));
+  assert.deepEqual((await client.findUser("alice")).backupEmail, {
+    address: "a***@example.net",
+    confirmedAt: "2026-11-01T00:00:00Z",
+  });
+  body = { ...base, backup_email: null };
+  const none = await client.findUser("alice");
+  assert.ok("backupEmail" in none && none.backupEmail === null, "null is the server saying there is none");
+  // A server from before backup addresses sends no field. Reading that as
+  // `null` would claim the user has none when the server never said.
+  body = base;
+  assert.ok(!("backupEmail" in (await client.findUser("alice"))));
+});
+
+test("sendUserPasswordResetLink names the masked backup a second link went to", async () => {
+  const { client } = make(() =>
+    json(
+      {
+        user_id: "u1",
+        username: "alice",
+        sent_to: { email: null, backup: "a***@example.net" },
+        expires_at: "2026-11-11T00:00:00Z",
+        delivered: true,
+      },
+      202,
+    ),
+  );
+  const r = await client.sendUserPasswordResetLink("u1");
+  assert.deepEqual(r.sentTo, { email: null, backup: "a***@example.net" });
+});
+
+test("removeUserBackupEmail sends DELETE with the reason, and removed: false is an answer", async () => {
+  const { client, calls } = make(() => json({ user_id: "u1", removed: false, note: "nothing to remove" }));
+  const r = await client.removeUserBackupEmail("u1", { tenantId: "t1", reason: "mailbox taken over" });
+  assert.equal(calls[0]!.method, "DELETE");
+  assert.equal(new URL(calls[0]!.url).pathname, "/api/v1/users/u1/backup-email");
+  // The reason travels in the body; the server refuses an absent one with a 400.
+  assert.deepEqual(calls[0]!.body, { tenant_id: "t1", reason: "mailbox taken over" });
+  assert.equal(calls[0]!.headers["content-type"], "application/json");
+  assert.deepEqual(r, { userId: "u1", removed: false, note: "nothing to remove" });
 });
 
 test("the SMS factor's switch reads and writes one shape, and on carries the tenant", async () => {

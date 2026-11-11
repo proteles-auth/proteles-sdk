@@ -15,6 +15,7 @@ import type {
   AttestationCaList,
   AuditEvent,
   AuditPage,
+  BackupEmailRemoval,
   Billing,
   BoundServiceAccount,
   Branding,
@@ -40,6 +41,7 @@ import type {
   DiscardResult,
   FetchLike,
   FleetHealth,
+  PasswordResetLink,
   Plan,
   PlanVersion,
   PlanVersionFields,
@@ -259,6 +261,12 @@ export class ManagementClient {
     }
     if (patch.accountRecoveryCodesEnabled !== undefined) {
       body.account_recovery_codes_enabled = patch.accountRecoveryCodesEnabled;
+    }
+    if (patch.backupEmailEnabled !== undefined) {
+      body.backup_email_enabled = patch.backupEmailEnabled;
+    }
+    if (patch.challengeQuestionsEnabled !== undefined) {
+      body.challenge_questions_enabled = patch.challengeQuestionsEnabled;
     }
     if (patch.passwordSignupEnabled !== undefined) {
       body.password_signup_enabled = patch.passwordSignupEnabled;
@@ -581,6 +589,16 @@ export class ManagementClient {
         email: w.mfa.email,
         sms: w.mfa.sms,
       },
+      // Copied only when present: a server from before backup addresses says
+      // nothing about them, which is not the same as "has none".
+      ...(w.backup_email === undefined
+        ? {}
+        : {
+            backupEmail:
+              w.backup_email === null
+                ? null
+                : { address: w.backup_email.address, confirmedAt: w.backup_email.confirmed_at },
+          }),
     };
   }
 
@@ -669,6 +687,75 @@ export class ManagementClient {
       smsRemoved: w.sms_removed,
       note: w.note,
     };
+  }
+
+  /**
+   * Mail a user a link to choose a new password — the forgotten-password response.
+   *
+   * The link goes only to the user's own confirmed address: the caller decides
+   * whether one goes, never where, and never sees it. It lasts 24 hours and
+   * works once, and until it is used nothing about the account changes — the
+   * password keeps working and nobody is signed out. Using it sets the
+   * password and ends every session.
+   *
+   * Needs `users:reset_password`, which is strict: a key with no scopes, or
+   * one holding only `users:reset_mfa`, is refused. A tenant key is held off a
+   * user for 7 days after a change to how they get back in (409
+   * `recent_recovery_change`); the platform token is not.
+   *
+   * Read `delivered` on the result: `false` means the link exists and the mail
+   * did not go, so send another later. When the user has a backup email
+   * address in force, a separate link goes there too, and `sentTo.backup`
+   * names it, masked.
+   */
+  async sendUserPasswordResetLink(
+    userId: string,
+    input: { tenantId?: string | null; reason?: string } = {},
+  ): Promise<PasswordResetLink> {
+    const w = await this.request<wire.UsersPasswordLinkResponse>(
+      "POST",
+      `/api/v1/users/${segment(userId)}/password/reset-link`,
+      { body: { tenant_id: input.tenantId, reason: input.reason } },
+    );
+    return {
+      userId: w.user_id,
+      username: w.username,
+      // `?? null`: a server from before links reached the backup address
+      // sends no `backup`, and sent none there.
+      sentTo: { email: w.sent_to.email, backup: w.sent_to.backup ?? null },
+      expiresAt: w.expires_at,
+      delivered: w.delivered,
+    };
+  }
+
+  /**
+   * Remove a user's backup email address — the taken-over-mailbox response.
+   *
+   * Also withdraws every live password link the account holds, the ones mailed
+   * to the user's own address as well as the backup's. Do this first when
+   * someone says their personal mailbox was taken over, then send them a link
+   * with `sendUserPasswordResetLink`. Only removal is offered: adding or
+   * changing a backup is the user's own, on their account page.
+   *
+   * Needs `users:reset_password` (strict). `reason` is required and recorded
+   * in the audit trail. A tenant key cannot remove the backup of an owner or
+   * administrator of the workspace (403), and is held off for 7 days after a
+   * change to how the user gets back in (409 `recent_recovery_change`); the
+   * platform token is held to neither.
+   *
+   * `removed: false` is not an error: the user had no backup and nothing
+   * changed.
+   */
+  async removeUserBackupEmail(
+    userId: string,
+    input: { tenantId?: string | null; reason: string },
+  ): Promise<BackupEmailRemoval> {
+    const w = await this.request<wire.UsersBackupRemovalResponse>(
+      "DELETE",
+      `/api/v1/users/${segment(userId)}/backup-email`,
+      { body: { tenant_id: input.tenantId, reason: input.reason } },
+    );
+    return { userId: w.user_id, removed: w.removed, note: w.note };
   }
 
   /**
@@ -2163,6 +2250,10 @@ function toTenant(w: wire.TenantDetail): Tenant {
     mfaSelfRecoveryHours: w.mfa_self_recovery_hours,
     mfaEmailFactorEnabled: w.mfa_email_factor_enabled,
     accountRecoveryCodesEnabled: w.account_recovery_codes_enabled,
+    // Copied only when present: a server from before these switches says
+    // nothing, which is not the same as "off".
+    ...(w.backup_email_enabled !== undefined ? { backupEmailEnabled: w.backup_email_enabled } : {}),
+    ...(w.challenge_questions_enabled !== undefined ? { challengeQuestionsEnabled: w.challenge_questions_enabled } : {}),
     passwordSignupEnabled: w.password_signup_enabled,
     socialSignupEnabled: w.social_signup_enabled,
     passkeyAttestation: w.passkey_attestation,

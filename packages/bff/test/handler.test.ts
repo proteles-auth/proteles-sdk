@@ -1474,14 +1474,16 @@ const invalidGrant = () =>
  * step repeating. Every call still reaches the ordinary mock first, so `calls`
  * records it either way.
  */
-function scriptedApp(script: { exchange?: Step[]; refresh?: Step[]; revoke?: Step[]; jwks?: Step[] }) {
+function scriptedApp(script: { exchange?: Step[]; refresh?: Step[]; revoke?: Step[]; jwks?: Step[]; userinfo?: Step[] }) {
   const inner = mockAS();
   const reports: { context: string; reason: string }[] = [];
-  const next = { exchange: 0, refresh: 0, revoke: 0, jwks: 0 };
+  const next = { exchange: 0, refresh: 0, revoke: 0, jwks: 0, userinfo: 0 };
   const fetch: FetchLike = async (url, init) => {
     const body = typeof init?.body === "string" ? init.body : "";
     const which = url.endsWith("/oauth/revoke")
       ? "revoke"
+      : url.endsWith("/oauth/userinfo")
+        ? "userinfo"
       : url.endsWith("/.well-known/jwks.json")
         ? "jwks"
         : url.endsWith("/oauth/token") && body.includes("grant_type=refresh_token")
@@ -1837,6 +1839,72 @@ test("invalid_grant at the code exchange still ends in login_failed (the control
   assert.equal(res.status, 303);
   assert.match(res.headers.get("location")!, /proteles_error=login_failed/);
   assert.ok(reports.some((r) => r.context === "callback" && /invalid_grant/.test(r.reason)));
+});
+
+// ---------------------------------------------------------------------------
+// A busy authorization server at sign-in's userinfo call.
+//
+// Since the server's !658, /oauth/userinfo answers 503 when the server cannot
+// read its storage (docs/access-tokens.md): "try again", no verdict on the
+// token. It ended in `login_failed`, as a wrong client secret does.
+// ---------------------------------------------------------------------------
+
+/** userinfo's answer when the server cannot read its storage, as docs/access-tokens.md shows it. */
+const storage503 = () =>
+  new Response(
+    JSON.stringify({
+      error: "temporarily_unavailable",
+      error_description: "the token could not be checked because this server could not read its storage; retry shortly",
+    }),
+    { status: 503, headers: { "content-type": "application/json", "retry-after": "5", "cache-control": "no-store" } },
+  );
+
+test("a busy server at sign-in's userinfo call gets the sign-in-again page, not login_failed", async () => {
+  for (const [label, step, retryAfter] of [
+    ["503, storage unreadable", storage503, "5"],
+    ["a proxy's 502", () => new Response("<html>bad gateway</html>", { status: 502 }), null],
+    ["408", () => new Response(null, { status: 408 }), null],
+    ["429", throttled429, "7"],
+    ["no answer", "unreachable", null],
+  ] as const) {
+    const { app, calls, reports } = scriptedApp({ userinfo: [step, "ok"] });
+
+    const res = await signIn(app, `/api/auth/login?returnTo=${encodeURIComponent("/dashboard?tab=a")}`);
+    assert.equal(res.status, 503, `${label}: a busy page`);
+    assert.equal(res.headers.get("location"), null, `${label}: not a redirect to login_failed`);
+    assert.equal(res.headers.get("retry-after"), retryAfter, `${label}: Retry-After only when the server named one`);
+    const page = await res.text();
+    assert.match(page, /Sign in again in a moment/, `${label}: it says to sign in again in a moment`);
+    const href = page.match(/href="([^"]*)"/)?.[1];
+    assert.equal(href, "/api/auth/login?returnTo=%2Fdashboard%3Ftab%3Da", `${label}: and links to a fresh sign-in`);
+    const cookies = setCookies(res);
+    assert.match(cookies.find((c) => c.startsWith("proteles_flow="))!, /Max-Age=0/, `${label}: the flow is spent`);
+    assert.equal(cookieValue(cookies, "proteles_session"), undefined, `${label}: nobody is signed in`);
+    assert.deepEqual(presentedCodes(calls), ["the-code"], `${label}: the code is presented once, never retried`);
+    assert.ok(
+      reports.some((r) => r.context === "callback" && /busy or unreachable at userinfo/.test(r.reason)),
+      `${label}: reported server-side, naming userinfo`,
+    );
+
+    const again = await signIn(app, href!);
+    assert.equal(again.status, 303, `${label}: signing in again works once the server answers`);
+    assert.equal(again.headers.get("location"), "/dashboard?tab=a");
+    assert.ok(cookieValue(setCookies(again), "proteles_session"), `${label}: with a session`);
+  }
+});
+
+test("a 401 from sign-in's userinfo call still ends in login_failed (the control)", async () => {
+  const invalidToken = () =>
+    new Response(JSON.stringify({ error: "invalid_token" }), {
+      status: 401,
+      headers: { "content-type": "application/json", "www-authenticate": 'Bearer error="invalid_token"' },
+    });
+  const { app, reports } = scriptedApp({ userinfo: [invalidToken] });
+  const res = await signIn(app, "/api/auth/login?returnTo=%2Fdashboard");
+  assert.equal(res.status, 303);
+  assert.match(res.headers.get("location")!, /proteles_error=login_failed/);
+  assert.equal(cookieValue(setCookies(res), "proteles_session"), undefined);
+  assert.ok(reports.some((r) => r.context === "callback" && /HTTP 401/.test(r.reason)));
 });
 
 // ---------------------------------------------------------------------------

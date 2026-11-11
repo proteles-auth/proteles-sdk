@@ -6,7 +6,7 @@
 > workspace.
 
 A typed client for the Proteles **Management API** (`/api/v1/*`) — the control
-plane. Every operation the API publishes, 102 at this release:
+plane. Every operation the API publishes, 104 at this release:
 provision tenants, apps and keys; configure connections, branding, mail,
 webhooks and SAML; read the audit trail and export it; and respond to an
 incident.

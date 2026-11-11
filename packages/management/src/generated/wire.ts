@@ -506,9 +506,12 @@ export interface AppsSelfRegistrationQuota {
 export interface AppsUsersError {
   /**
    * Stable machine-readable slug. The values reachable on the operations that
-   * answer with this body are exactly the eight below.
+   * answer with this body are exactly the nine below. `unavailable` is the 503
+   * of `POST /users/{user_id}/mfa/reset` and `POST
+   * /users/{user_id}/password/reset-link`: a read the decision turns on
+   * failed.
    */
-  error: "invalid_request" | "unauthorized" | "forbidden" | "insufficient_scope" | "not_found" | "conflict" | "server_error" | "temporarily_unavailable";
+  error: "invalid_request" | "unauthorized" | "forbidden" | "insufficient_scope" | "not_found" | "conflict" | "server_error" | "temporarily_unavailable" | "unavailable";
   /** Human-readable sentence. Not stable; do not match on it. */
   message: string;
   /**
@@ -1238,14 +1241,38 @@ export interface PlanVersionPrice {
  * The body of every 429 from this API. One schema, because every 429 carries
  * the same three fields whichever bucket refused the call. `error_description`
  * and `message` carry the same string; `message` exists for clients that read
- * a generic envelope. `error` is `rate_limited` from the limiter, and
+ * a generic envelope. `error` is `rate_limited` from the limiter;
  * `invitation_quota_exhausted` from `POST /users/invite` when a tenant
- * self-service sign-up made has sent its daily allowance of invitations.
+ * self-service sign-up made has sent its daily allowance of invitations; and
+ * `reset_mail_limit` from `POST /users/{user_id}/password/reset-link` when
+ * administrators have sent the user as many password links as one account is
+ * sent (3 an hour, 10 a day).
  */
 export interface RateLimitError {
-  error: "rate_limited" | "invitation_quota_exhausted";
+  error: "rate_limited" | "invitation_quota_exhausted" | "reset_mail_limit";
   error_description: string;
   message: string;
+}
+
+/**
+ * The 409 `recent_recovery_change`: a tenant key held off acting on a user for
+ * 7 days after a change to how that user gets back in (R8, R9, R10, R11):
+ * their email address changed, their challenge questions were removed, a
+ * backup email address was added, or their password was reset with a link sent
+ * to their backup address. Nothing was changed.
+ */
+export interface RecentRecoveryChange {
+  error: "recent_recovery_change";
+  /** Human-readable sentence. Not stable; do not match on it. */
+  message: string;
+  /** When the hold ends: 7 days after the change, RFC 3339. */
+  until: string;
+  /**
+   * What changed: the user's email address, their challenge questions were
+   * removed, a backup email address was added, or their password was reset
+   * with a link sent to their backup address.
+   */
+  reason: "email_changed" | "questions_removed" | "backup_email_added" | "password_reset_via_backup";
 }
 
 export interface ResourceServer {
@@ -1930,13 +1957,14 @@ export interface TenantApiKeyCreateRequest {
    * 400 and mints nothing. A key that names no scope passes every
    * held-to-what-you-declare check and no strict one, so it can do everything
    * a tenant key can except the operations behind a strict scope:
-   * `users:reset_mfa`, `users:revoke_sessions`, `users:write` on bulk changes,
-   * deactivation and reactivation, `domains:write`, `mail:read`, `mail:write`,
-   * `usage:read`, `saml:*` and `saml-sp:*` (see `TenantApiKeyScope`). Keys
-   * minted that way before 2026-10-01 keep working, and are listed with
-   * `scopes: []`; none is minted any more, by this route or by rotation
-   * (`rotateApiKey` answers 409 for one). Duplicates are accepted; there is no
-   * cap on the array's length, only on its contents.
+   * `users:reset_mfa`, `users:reset_password`, `users:revoke_sessions`,
+   * `users:write` on bulk changes, deactivation and reactivation,
+   * `domains:write`, `mail:read`, `mail:write`, `usage:read`, `saml:*` and
+   * `saml-sp:*` (see `TenantApiKeyScope`). Keys minted that way before
+   * 2026-10-01 keep working, and are listed with `scopes: []`; none is minted
+   * any more, by this route or by rotation (`rotateApiKey` answers 409 for
+   * one). Duplicates are accepted; there is no cap on the array's length, only
+   * on its contents.
    */
   scopes: TenantApiKeyScope[];
 }
@@ -1995,27 +2023,28 @@ export interface TenantApiKeyRevoked {
  * *strict* — required outright, unscoped keys included. An unscoped key passes
  * every held check, so under a held rule every unscoped key would have the
  * operation; strict is for the ones too sensitive for that — clearing a user's
- * factors, signing them out everywhere or cutting off their access, pointing a
- * hostname at the tenant, the tenant's mail settings, its usage numbers, and
- * SAML in either direction. Covers `domains:write`, `mail:read`, `mail:write`,
- * `usage:read`, `saml:read`, `saml:write`, `saml-sp:read` and `saml-sp:write`;
+ * factors, mailing them a link to choose a new password, signing them out
+ * everywhere or cutting off their access, pointing a hostname at the tenant,
+ * the tenant's mail settings, its usage numbers, and SAML in either direction.
+ * Covers `domains:write`, `mail:read`, `mail:write`, `usage:read`,
+ * `saml:read`, `saml:write`, `saml-sp:read` and `saml-sp:write`;
  * `saml-sp:write` is also what minting, promoting and revoking the
  * identity-provider signing key take (since 2026-10-10), where `tenant:write`
  * used to do. No strict write scope stands in for its read: a key holding
  * `mail:write`, `saml:write` or `saml-sp:write` still needs the matching read
- * scope to read. **Three scopes are enforced both ways**, which is the part a
+ * scope to read. **Four scopes are enforced both ways**, which is the part a
  * per-scope reading gets wrong. `users:write` is held on `POST /users`, `POST
  * /users/invite` and the service-account route — creating a user is additive —
  * and strict on `POST /users/bulk`, `POST /users/{id}/deactivate` and `POST
  * /users/{id}/reactivate`, because denying somebody access to their account is
- * not. `users:reset_mfa` and `users:revoke_sessions` are strict on the
- * operations they name, and *held* on `GET /users`, the lookup by `username`,
- * which accepts any of them or `users:read`. So each doubles as a read grant
- * for the user it is about to act on: a key scoped only to reset a factor can
- * still look up whose factor it is. Classifying them strict-only misdescribes
- * that route.
+ * not. `users:reset_mfa`, `users:reset_password` and `users:revoke_sessions`
+ * are strict on the operations they name, and *held* on `GET /users`, the
+ * lookup by `username`, which accepts any of them or `users:read`. So each
+ * doubles as a read grant for the user it is about to act on: a key scoped
+ * only to reset a factor can still look up whose factor it is. Classifying
+ * them strict-only misdescribes that route.
  */
-export type TenantApiKeyScope = "tenant:read" | "tenant:write" | "apps:read" | "apps:write" | "connections:read" | "connections:write" | "users:read" | "users:write" | "users:reset_mfa" | "users:revoke_sessions" | "audit:read" | "webhooks:read" | "webhooks:write" | "domains:write" | "mail:read" | "mail:write" | "usage:read" | "resources:read" | "resources:write" | "saml:read" | "saml:write" | "saml-sp:read" | "saml-sp:write";
+export type TenantApiKeyScope = "tenant:read" | "tenant:write" | "apps:read" | "apps:write" | "connections:read" | "connections:write" | "users:read" | "users:write" | "users:reset_mfa" | "users:reset_password" | "users:revoke_sessions" | "audit:read" | "webhooks:read" | "webhooks:write" | "domains:write" | "mail:read" | "mail:write" | "usage:read" | "resources:read" | "resources:write" | "saml:read" | "saml:write" | "saml-sp:read" | "saml-sp:write";
 
 /** Never the raw key, never the hash. */
 export interface TenantApiKeySummary {
@@ -2206,15 +2235,20 @@ export interface TenantDetail {
   mfa_grace_until: string | null;
   /**
    * How long after a user proves their mailbox their second factors are
-   * cleared, in hours. `null` — the default, and what every tenant that
-   * predates this has — means the tenant does not offer self-service recovery
-   * at all and a user who has lost every factor still needs an operator. Null
-   * rather than `0` or `false`, because off is the *absence* of the setting:
-   * turning it off removes the setting rather than storing a zero, so a tenant
-   * that turned this on and off again is indistinguishable from one that never
-   * asked. A stored value that is not a positive integer reads as `null` here.
-   * That is the direction a corrupt setting must fail in: it can only withdraw
-   * the feature, never switch it on for a tenant that did not ask for it.
+   * cleared, in hours, or `null` when the tenant does not offer self-service
+   * recovery at all and a user who has lost every factor needs an owner or
+   * administrator of the workspace to remove them in the console (R8; in the
+   * platform's own workspace, whose administrators act on nobody, an owner),
+   * or a reset through `POST /users/{user_id}/mfa/reset`. **On by default**
+   * (2026-10-27): `72` by default for a workspace created after migration
+   * 0202, which also switched on every existing workspace except the
+   * platform's own and those whose last recorded choice was off. The
+   * platform's own tenant reads `null` until its operator turns it on. An
+   * owner changes it in the console, under Settings → Account recovery; an
+   * owner or administrator waits at least 168 hours whatever this says. Null
+   * rather than `0` or `false`, because off is no wait at all: `null` is off,
+   * and turning it off drops every waiting reset. The column's CHECK holds a
+   * stored value to 1–720, so nothing else can be read.
    */
   mfa_self_recovery_hours: number | null;
   /**
@@ -2269,10 +2303,24 @@ export interface TenantDetail {
    */
   mfa_email_factor_enabled: boolean;
   /**
+   * Whether people in this tenant may add a backup email address: a second
+   * address of their own, proved by a link, that their account's security
+   * notices also go to. It cannot be used to sign in. On by default (migration
+   * 0204), except in the platform's own workspace. Off keeps the addresses
+   * people added and sends them nothing. An owner changes it in the console,
+   * under Settings → Account recovery. Always present, for
+   * `mfa_email_factor_enabled`'s reason.
+   */
+  backup_email_enabled: boolean;
+  /**
    * Whether accounts in this tenant with no confirmed email address may hold a
    * saved account-recovery code — shown once, kept offline, and spent at
-   * `/account/recover` to choose a new password. Off unless the tenant turned
-   * it on, and always present, for `mfa_email_factor_enabled`'s reason.
+   * `/account/recover` to choose a new password. On by default (2026-10-27):
+   * true for a workspace created after migration 0202, which also switched on
+   * every existing workspace except the platform's own, those whose last
+   * recorded choice was off, and those that had it off while holding a saved
+   * code. An owner changes it in the console, under Settings → Account
+   * recovery. Always present, for `mfa_email_factor_enabled`'s reason.
    */
   account_recovery_codes_enabled: boolean;
   /**
@@ -2288,6 +2336,14 @@ export interface TenantDetail {
    * sides verified. Off for a new tenant, and always present.
    */
   social_signup_enabled: boolean;
+  /**
+   * Whether people in this tenant may set challenge questions on their account
+   * page: three of eight curated questions, asked as well as a password reset
+   * link, a saved recovery code or the second-factor reset link — never
+   * instead of one — and two of the three must match. Off unless the tenant
+   * turned it on, and always present, for `mfa_email_factor_enabled`'s reason.
+   */
+  challenge_questions_enabled: boolean;
   plan: Plan;
   plan_subscribed: Plan;
   /** The operator's override, or `null`. When set it is the plan in force. */
@@ -2651,22 +2707,23 @@ export interface TenantUpdateRequest {
   mfa_grace_days?: number;
   /**
    * Turn self-service second-factor recovery on, change its delay, or turn it
-   * off. **Three-state**, like `max_self_registered_clients`: * field
-   * **absent** → leave the setting alone; * `null` → turn the feature off; *
-   * an integer → turn it on with that delay, in hours. `0` is a **400**, not a
-   * synonym for `null`. A zero-hour window is an immediate clearance wearing
-   * the delay's name — the mail saying "this is happening, sign in to stop it"
-   * would arrive after the factors were already gone. Someone who types `0`
-   * has misunderstood the feature, and a 200 would leave them believing they
-   * had a safety window. Bounded above by 720 — thirty days, past which the
-   * delay stops being a safety window and becomes a refusal wearing a
-   * countdown's clothes. Unlike the quota fields below, this is **not**
-   * platform-only. It is the tenant's own security posture, the same class of
-   * decision as `mfa_policy`, and the tenant is who bears it. Audited as
-   * `mfa.self_recovery_changed` (warning) in every direction, including off.
-   * **`null` drops every request in flight**, in the same transaction as the
-   * setting. Each one that was counting down gets an
-   * `mfa.self_recovery_cancelled` row (info) with
+   * off. It is on by default — `72` for a workspace created after migration
+   * 0202 — and an owner can change it in the console too. **Three-state**,
+   * like `max_self_registered_clients`: * field **absent** → leave the setting
+   * alone; * `null` → turn the feature off; * an integer → turn it on with
+   * that delay, in hours. `0` is a **400**, not a synonym for `null`. A
+   * zero-hour window is an immediate clearance wearing the delay's name — the
+   * mail saying "this is happening, sign in to stop it" would arrive after the
+   * factors were already gone. Someone who types `0` has misunderstood the
+   * feature, and a 200 would leave them believing they had a safety window.
+   * Bounded above by 720 — thirty days, past which the delay stops being a
+   * safety window and becomes a refusal wearing a countdown's clothes. Unlike
+   * the quota fields below, this is **not** platform-only. It is the tenant's
+   * own security posture, the same class of decision as `mfa_policy`, and the
+   * tenant is who bears it. Audited as `mfa.self_recovery_changed` (warning)
+   * in every direction, including off. **`null` drops every request in
+   * flight**, in the same transaction as the setting. Each one that was
+   * counting down gets an `mfa.self_recovery_cancelled` row (info) with
    * `reason=workspace_turned_it_off`, and its account is mailed that nothing
    * will be removed. An owner or administrator of the workspace waits at least
    * seven days whatever this says.
@@ -2726,11 +2783,21 @@ export interface TenantUpdateRequest {
    */
   mfa_email_factor_enabled?: boolean;
   /**
-   * Turns saved account-recovery codes on or off for this tenant. Off by
-   * default. A code is offered only to an account with a password and no
-   * confirmed address; it sets a new password and never gets past a second
-   * factor. Turning it off withdraws no code — it stops every one being
-   * accepted until it is turned on again. Audited as
+   * Turns backup email addresses on or off for this tenant: whether people may
+   * add a second address of their own that their security notices also go to.
+   * On by default except in the platform's own workspace, and an owner can
+   * change it in the console too. Turning it off removes no address — the ones
+   * people added are kept and sent nothing until it is turned on again.
+   * Audited as `tenant.backup_emails_changed`.
+   */
+  backup_email_enabled?: boolean;
+  /**
+   * Turns saved account-recovery codes on or off for this tenant. On by
+   * default for a workspace created after migration 0202, and an owner can
+   * change it in the console too. A code is offered only to an account with a
+   * password and no confirmed address; it sets a new password and never gets
+   * past a second factor. Turning it off withdraws no code — it stops every
+   * one being accepted until it is turned on again. Audited as
    * `tenant.account_recovery_codes_changed`.
    */
   account_recovery_codes_enabled?: boolean;
@@ -2748,6 +2815,17 @@ export interface TenantUpdateRequest {
    * default for a new tenant. Audited as `tenant.social_signup_changed`.
    */
   social_signup_enabled?: boolean;
+  /**
+   * Turns challenge questions on or off for this tenant. Off by default. On,
+   * people may set three questions on their account page; a new set takes
+   * effect after 7 days. They are asked as well as a password reset link, a
+   * saved recovery code or the second-factor reset link, never instead of one,
+   * so they add a check to recovery and never a way in. Someone who forgets
+   * their answers needs them cleared. Turning it off withdraws no set: each is
+   * kept and not asked until it is turned on again. Audited as
+   * `tenant.challenge_questions_changed`.
+   */
+  challenge_questions_enabled?: boolean;
   /**
    * **Platform token only.** Puts the tenant on a plan by hand (a comp, an
    * agreement, a test tenant), or `null` to clear it and let the subscription
@@ -3028,13 +3106,62 @@ export interface UserSearchResults {
   per_page: number;
 }
 
+/**
+ * Unknown fields are refused: this removes the backup and withdraws every live
+ * reset link, and a flag it does not have is not one it can honour.
+ */
+export interface UsersBackupRemovalRequest {
+  /**
+   * Required with the platform token — 400 otherwise. Must be the key's own
+   * tenant otherwise (403).
+   */
+  tenant_id?: string | null;
+  /**
+   * Required, and not blank. Recorded on
+   * `backup_email.removed_by_administrator` with control characters stripped
+   * and cut at 200 characters. Never in the mail, never echoed here.
+   */
+  reason: string;
+}
+
+/** Whether a backup was removed. Never the address. */
+export interface UsersBackupRemovalResponse {
+  user_id: string;
+  /**
+   * `true` when a backup was removed; `false` when the user had none and
+   * nothing changed.
+   */
+  removed: boolean;
+  /**
+   * A sentence for a person reading the answer. Not stable; do not match on
+   * it.
+   */
+  note: string;
+}
+
 /** The 200 body of `GET /api/v1/users`. */
 export interface UsersLookupResponse {
-  /** The `user_id` to pass to the two action endpoints below. */
+  /** The `user_id` to pass to the three action endpoints below. */
   id: string;
   username: string;
   /** The key is always present and may be null. */
   email: string | null;
+  /**
+   * The user's backup email address when one is in force (confirmed, and the
+   * workspace has backup addresses on), **masked**: a password link goes to it
+   * as well as to `email`. `null` when there is none, when the workspace has
+   * them off, or when it could not be read. The full address is never
+   * returned.
+   */
+  backup_email: {
+    /**
+     * Masked: the first character of the local part, `***@`, then the domain
+     * (`a***@example.com`).
+     */
+    address: string;
+    /** When its confirmation link was spent, RFC 3339. */
+    confirmed_at: string;
+  } | null;
   is_active: boolean;
   mfa: UsersMfaStatus;
 }
@@ -3062,6 +3189,64 @@ export interface UsersMfaStatus {
    * number). Falls back to `false` if it cannot be read.
    */
   sms: boolean;
+}
+
+/**
+ * A 409 from `POST /users/{user_id}/password/reset-link` other than the hold:
+ * the account cannot take a link, the workspace cannot send mail, or it is
+ * suspended. Nothing was sent.
+ */
+export interface UsersPasswordLinkRefused {
+  error: "machine_account" | "account_deactivated" | "signs_in_with_saml" | "unconfirmed_address" | "no_address" | "mail_not_configured" | "conflict";
+  /** Human-readable sentence. Not stable; do not match on it. */
+  message: string;
+}
+
+/**
+ * Unknown fields are refused: the link goes only to the user's own confirmed
+ * address, and a field suggesting somewhere else is refused rather than
+ * ignored.
+ */
+export interface UsersPasswordLinkRequest {
+  /**
+   * Required with the platform token — 400 otherwise. Must be the key's own
+   * tenant otherwise (403).
+   */
+  tenant_id?: string | null;
+  /**
+   * Optional. A note for the audit trail, recorded on
+   * `password.admin_reset_requested` with control characters stripped and cut
+   * at 200 characters. Never in the mail, never echoed here.
+   */
+  reason?: string | null;
+}
+
+/** The 202 body: who, where it went, and until when. Never the link. */
+export interface UsersPasswordLinkResponse {
+  user_id: string;
+  username: string;
+  /** Where the link went. */
+  sent_to: {
+    /**
+     * The user's own confirmed email address, when a link went to it; `null`
+     * when it is not confirmed and the only link went to the backup address.
+     */
+    email: string | null;
+    /**
+     * The user's backup email address, **masked** (`a***@example.com`: the
+     * first character of the local part, then the domain), when a separate
+     * link went to it too; `null` when the user has no backup address in
+     * force. The full address is never returned.
+     */
+    backup: string | null;
+  };
+  /** When the link stops working: 24 hours after it was made, RFC 3339. */
+  expires_at: string;
+  /**
+   * Whether the relay took the mail. `false`: the link was made and recorded
+   * and the mail did not go.
+   */
+  delivered: boolean;
 }
 
 /**
@@ -3461,7 +3646,7 @@ export interface WebhookEndpointWriteResult {
  * refused at write time rather than stored, because "a typo would otherwise
  * look configured and silently never fire".
  */
-export type WebhookEventName = "mfa.admin_reset" | "webhook.dead_letter" | "webhook.endpoint_disabled" | "user.created" | "user.deactivated" | "user.reactivated" | "account.deleted" | "email.changed" | "mfa.self_recovery_scheduled" | "mfa.self_recovery_completed" | "app.created" | "app.updated" | "app.deleted";
+export type WebhookEventName = "mfa.admin_reset" | "webhook.dead_letter" | "webhook.endpoint_disabled" | "user.created" | "user.deactivated" | "user.reactivated" | "account.deleted" | "email.changed" | "mfa.self_recovery_scheduled" | "mfa.self_recovery_completed" | "app.created" | "app.updated" | "app.deleted" | "challenge_questions.locked" | "challenge_questions.cleared";
 
 export interface WebhookReplayOneResult {
   requeued: number;

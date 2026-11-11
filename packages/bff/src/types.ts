@@ -183,10 +183,9 @@ export interface ProtelesConfigInput {
    * always accepted `timeoutMs`, this package simply never passed it, so 10s
    * was unreachable for every consumer. A cold-starting authorization server,
    * a slow network, or a host busy generating a new tenant's signing keys all
-   * push the token exchange past it. A user whose exchange times out is told
-   * the sign-in service was busy and offered a fresh sign-in, and one whose
-   * userinfo call times out gets the generic `?proteles_error=login_failed` a
-   * wrong secret produces; neither says "timeout". Also settable with
+   * push the token exchange past it. A user whose exchange or userinfo call
+   * times out is told the sign-in service was busy and offered a fresh
+   * sign-in; that does not say "timeout". Also settable with
    * `PROTELES_TIMEOUT_MS`.
    */
   timeoutMs?: number;
