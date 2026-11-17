@@ -1920,3 +1920,122 @@ test("checkApp reads the findings for one app, in the tenant asked for", async (
     ],
   });
 });
+
+const wireLicense = (over: Record<string, unknown> = {}) => ({
+  id: 7,
+  application: "JobKebab",
+  note: "",
+  plan: "business",
+  version_id: 31,
+  version: 2,
+  granted_by: "the platform token",
+  granted_at: "2026-11-12T10:00:00Z",
+  revoked: null,
+  tenants: [
+    { id: "t1", slug: "jobkebab" },
+    { id: "t2", slug: null },
+  ],
+  ...over,
+});
+
+test("listLicenses maps each license, in force or revoked", async () => {
+  const { client, calls } = make(() =>
+    json({
+      licenses: [
+        wireLicense(),
+        wireLicense({
+          id: 6,
+          revoked: { by: "admin-cli", at: "2026-11-13T09:00:00Z", reason: "moved to a subscription" },
+          tenants: [],
+        }),
+      ],
+    }),
+  );
+  const ls = await client.listLicenses();
+  assert.equal(calls[0]!.method, "GET");
+  assert.equal(calls[0]!.url, "https://api.proteles.com/api/v1/licenses");
+  assert.deepEqual(ls[0], {
+    id: 7,
+    application: "JobKebab",
+    note: "",
+    plan: "business",
+    versionId: 31,
+    version: 2,
+    grantedBy: "the platform token",
+    grantedAt: "2026-11-12T10:00:00Z",
+    revoked: null,
+    tenants: [
+      { id: "t1", slug: "jobkebab" },
+      { id: "t2", slug: null },
+    ],
+  });
+  assert.deepEqual(ls[1]!.revoked, { by: "admin-cli", at: "2026-11-13T09:00:00Z", reason: "moved to a subscription" });
+  assert.deepEqual(ls[1]!.tenants, []);
+});
+
+test("grantLicense sends exactly the request's keys, and the note only when given", async () => {
+  // The server refuses an unknown key with a 400, so a camelCase key leaking
+  // through (`tenantIds`) would fail the grant.
+  const { client, calls } = make(() => json(wireLicense(), 201));
+  const l = await client.grantLicense({ application: "JobKebab", plan: "business", tenantIds: ["t1", "t2"] });
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(calls[0]!.url, "https://api.proteles.com/api/v1/licenses");
+  assert.deepEqual(calls[0]!.body, { application: "JobKebab", plan: "business", tenant_ids: ["t1", "t2"] });
+  assert.equal(l.id, 7);
+  assert.equal(l.versionId, 31);
+
+  await client.grantLicense({ application: "Clamello", plan: "team", tenantIds: ["t3"], note: "own app" });
+  assert.deepEqual(calls[1]!.body, { application: "Clamello", plan: "team", tenant_ids: ["t3"], note: "own app" });
+});
+
+test("grantLicense's refusal is a ManagementError carrying conflict", async () => {
+  // A tenant with a subscription that can still change is refused, and then
+  // nothing is granted: the caller must see the 409, not a license.
+  const { client } = make(() => json({ error: "conflict", message: "has a subscription" }, 409));
+  await assert.rejects(
+    client.grantLicense({ application: "JobKebab", plan: "business", tenantIds: ["t1"] }),
+    (err: unknown) => {
+      assert.ok(err instanceof ManagementError);
+      assert.equal(err.status, 409);
+      assert.equal(err.code, "conflict");
+      return true;
+    },
+  );
+});
+
+test("revokeLicense posts the reason to the license's revoke path", async () => {
+  const { client, calls } = make(() =>
+    json(wireLicense({ revoked: { by: "the platform token", at: "2026-11-14T00:00:00Z", reason: "ticket 9" }, tenants: [] })),
+  );
+  const l = await client.revokeLicense(7, { reason: "ticket 9" });
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(new URL(calls[0]!.url).pathname, "/api/v1/licenses/7/revoke");
+  assert.deepEqual(calls[0]!.body, { reason: "ticket 9" });
+  assert.equal(l.revoked?.reason, "ticket 9");
+  assert.deepEqual(l.tenants, []);
+});
+
+test("addLicenseTenant posts the tenant to the license's tenants path", async () => {
+  const { client, calls } = make(() => json(wireLicense()));
+  await client.addLicenseTenant(7, "t2");
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(new URL(calls[0]!.url).pathname, "/api/v1/licenses/7/tenants");
+  assert.deepEqual(calls[0]!.body, { tenant_id: "t2" });
+});
+
+test("getTenant carries license_id when the server sends it, and leaves it out when not", async () => {
+  // `null` (a comp, or no override) and absent (a server before licenses) are
+  // different answers, so a mapping that defaulted absent to null would claim
+  // an old server had said "not licensed".
+  const body = (extra: Record<string, unknown>) => ({ id: "t1", slug: "jobkebab", status: "active", ...extra });
+  let reply: Record<string, unknown> = body({ license_id: 7, plan_binding: "licensed" });
+  const { client } = make(() => json(reply));
+  const licensed = await client.getTenant("t1");
+  assert.equal(licensed.licenseId, 7);
+  assert.equal(licensed.planBinding, "licensed");
+  reply = body({ license_id: null });
+  assert.equal((await client.getTenant("t1")).licenseId, null);
+  reply = body({});
+  const old = await client.getTenant("t1");
+  assert.equal("licenseId" in old, false);
+});

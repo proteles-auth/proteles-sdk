@@ -83,8 +83,11 @@ export type PaidPlan = wire.PaidPlan;
  * `"not_enforced"` — the deployment does not enforce plans (`PLANS_ENFORCED`
  * is off), checked first, for every tenant; `"platform_tenant"` — plans are
  * enforced and this is the platform's own (default) tenant, which no plan
- * limits; `"plan"` — held to its plan. The two reasons a plan does not bind
- * are told apart only here.
+ * limits; `"licensed"` — plans are enforced and the tenant holds a perpetual
+ * license ({@link PlanLicense}): no limit of its plan applies, and what the
+ * plan includes (SAML, SMS, machine identity) is still its plan version's;
+ * `"plan"` — held to its plan. The three reasons a plan does not bind are
+ * told apart only here. A server before 2026-11-12 never sends `"licensed"`.
  */
 export type PlanBinding = WirePlanBinding;
 
@@ -187,8 +190,18 @@ export interface Tenant extends TenantSummary {
   plan: Plan;
   /** What the billing provider says the customer pays for. */
   planSubscribed: Plan;
-  /** The operator's override, or `null`. */
+  /**
+   * The operator's override, or `null`: a courtesy comp, or a perpetual
+   * license's when `licenseId` is set.
+   */
   planOverride: Plan | null;
+  /**
+   * The perpetual license the override is (see `listLicenses`), or `null` for
+   * a comp and for no override. While it is set, `updateTenant` refuses
+   * `planOverride` with a 409: only `revokeLicense` changes it. Absent from a
+   * server before 2026-11-12, which had no licenses.
+   */
+  licenseId?: number | null;
   /**
    * What a new member grant is held to: the lower of the plan's cap (five on
    * FREE and TEAM; none on BUSINESS, which sells seats; none on any plan where
@@ -197,18 +210,20 @@ export interface Tenant extends TenantSummary {
   seatCap: number | null;
   /**
    * Whether this tenant is held to its plan: the deployment enforces plans
-   * (`PLANS_ENFORCED`) and the tenant is not the platform's own (the default
-   * tenant, which no plan limits). `false`: `plan` is recorded and shown, and
-   * limits nothing. Absent from a server that predates the switch, which
-   * enforced every plan on every tenant.
+   * (`PLANS_ENFORCED`), the tenant is not the platform's own (the default
+   * tenant, which no plan limits), and it holds no perpetual license. `false`:
+   * `plan` is recorded and shown, and limits nothing; for a licensed tenant
+   * its features are still the plan's. Absent from a server that predates the
+   * switch, which enforced every plan on every tenant.
    */
   plansEnforced?: boolean;
   /**
    * Why the plan does or does not bind: `"not_enforced"` (`PLANS_ENFORCED` is
-   * off) or `"platform_tenant"` (the default tenant, plans enforced) where
-   * `plansEnforced` is false, `"plan"` where it is true — so on the default
-   * tenant this, not `plansEnforced`, says whether the deployment enforces
-   * plans. Absent from a server before 2026-10-03.
+   * off), `"platform_tenant"` (the default tenant, plans enforced) or
+   * `"licensed"` (a perpetual license) where `plansEnforced` is false, `"plan"`
+   * where it is true — so on the default tenant this, not `plansEnforced`,
+   * says whether the deployment enforces plans. Absent from a server before
+   * 2026-10-03.
    */
   planBinding?: PlanBinding;
 }
@@ -515,6 +530,10 @@ export interface UpdateTenantInput {
    * Platform-token only, like `maxMembers`: a plan a customer could set for
    * itself would be a price of zero. The billing provider never writes it, so an
    * override survives every subscription change.
+   *
+   * Refused with a 409 (`conflict`) for a tenant that holds a perpetual
+   * license (`Tenant.licenseId`): its override is the license's, and only
+   * `revokeLicense` changes it.
    */
   planOverride?: Plan | null;
   /**
@@ -1393,21 +1412,24 @@ export interface TenantPlan {
   tenantId: string;
   plan: Plan;
   /**
-   * Who decided it: `override` (the operator), `subscription` (a paid plan
-   * from the billing provider), or `none` (nothing did — FREE).
+   * Who decided it: `license` (a perpetual license, never billed), `override`
+   * (the operator, as a comp), `subscription` (a paid plan from the billing
+   * provider), or `none` (nothing did — FREE).
    */
   source: WireBillingSource;
   /**
    * Whether this tenant is held to its plan: the deployment enforces plans
-   * (`PLANS_ENFORCED`) and the tenant is not the platform's own (the default
-   * tenant, which no plan limits). `false`: `entitlements` is the unrestricted
-   * set, whatever `plan` says.
+   * (`PLANS_ENFORCED`), the tenant is not the platform's own (the default
+   * tenant, which no plan limits), and it holds no perpetual license. `false`:
+   * `entitlements` is the unrestricted set, whatever `plan` says — except for
+   * a licensed tenant, whose `saml`, `machineIdentity`, `sms` and
+   * `enhancedSupport` are still its plan version's.
    */
   enforced: boolean;
   /**
-   * Why: `"not_enforced"` or `"platform_tenant"` where `enforced` is false,
-   * `"plan"` where it is true (see {@link PlanBinding}). Absent from a server
-   * before 2026-10-03.
+   * Why: `"not_enforced"`, `"platform_tenant"` or `"licensed"` where
+   * `enforced` is false, `"plan"` where it is true (see {@link PlanBinding}).
+   * Absent from a server before 2026-10-03.
    */
   planBinding?: PlanBinding;
   entitlements: PlanEntitlements;
@@ -1423,9 +1445,9 @@ export interface Billing {
   /** The plan in force. */
   plan: Plan;
   /**
-   * Why: `override` (the platform operator set one, and it wins),
-   * `subscription` (a subscription in force pays for it), or `none` (nothing
-   * does, so FREE).
+   * Why: `license` (a perpetual license: nobody pays, ever), `override` (the
+   * platform operator set one as a comp, and it wins), `subscription` (a
+   * subscription in force pays for it), or `none` (nothing does, so FREE).
    */
   source: WireBillingSource;
   overridePlan: WireOverridePlan;
@@ -2252,6 +2274,66 @@ export interface PlanVersionList {
   versions: PlanVersion[];
   /** Whether publishing a paid version makes prices at a billing provider. */
   billingEnabled: boolean;
+}
+
+/** A tenant under a perpetual license. */
+export interface PlanLicenseTenant {
+  id: string;
+  /** `null` for a tenant with no slug. */
+  slug: string | null;
+}
+
+/** Who revoked a perpetual license, when and why. */
+export interface PlanLicenseRevocation {
+  by: string;
+  at: string;
+  reason: string;
+}
+
+/**
+ * A perpetual license: a plan held forever without billing (no checkout,
+ * subscription, invoice or meter), for one of the operator's own
+ * applications. It keeps the plan version it was granted at; every limit of
+ * that version is lifted, and every feature is that version's. Never edited
+ * and never deleted: a revoked one stays listed.
+ */
+export interface PlanLicense {
+  id: number;
+  /** Which of the operator's applications it is for. */
+  application: string;
+  /** The operator's note; may be empty. */
+  note: string;
+  plan: Plan;
+  /** The version granted (a {@link PlanVersion}'s `id`), kept for good. */
+  versionId: number;
+  /** Its number within its tier. */
+  version: number;
+  /**
+   * The operator the dashboard named, `the platform token`, or `admin-cli`.
+   * Asserted, not proved.
+   */
+  grantedBy: string;
+  grantedAt: string;
+  /** `null` while it is in force. A revocation is final. */
+  revoked: PlanLicenseRevocation | null;
+  /** The tenants under it now. Empty once revoked. */
+  tenants: PlanLicenseTenant[];
+}
+
+export interface GrantLicenseInput {
+  /** Which application it is for: 1 to 200 characters, no line breaks. */
+  application: string;
+  /** Granted at this plan's current published version. */
+  plan: Plan;
+  /** The tenants to put on it: 1 to 100. Repeats count once. */
+  tenantIds: string[];
+  /** Optional, up to 2,000 characters. */
+  note?: string;
+}
+
+export interface RevokeLicenseInput {
+  /** Why: required, up to 2,000 characters, and recorded on the license and in each tenant's audit trail. */
+  reason: string;
 }
 
 export interface SetSoftCapInput extends TenantScope {
