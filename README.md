@@ -63,8 +63,8 @@ covers both and walks through registering the app.
 
 | Platform | Install | Details |
 | --- | --- | --- |
-| iOS 17.4+ (Swift 6) | Swift Package Manager: `https://github.com/proteles-auth/proteles-sdk`, product **`ProtelesAuth`** | [`mobile/ios/README.md`](mobile/ios/README.md) |
-| Android (minSdk 26) | Maven Central: `com.proteles:proteles-auth-android` (it brings `com.proteles:proteles-auth-core`) | [`mobile/android/README.md`](mobile/android/README.md) |
+| iOS 17.4+ (Swift 6) | Swift Package Manager: `https://github.com/proteles-auth/proteles-sdk`, product **`ProtelesAuth`**. **Not released yet:** no version tag exists, so for now depend on the `main` branch | [`mobile/ios/README.md`](mobile/ios/README.md) |
+| Android (minSdk 26) | Maven Central: `com.proteles:proteles-auth-android` (it brings `com.proteles:proteles-auth-core`). **Not released yet:** build it from this repository for now | [`mobile/android/README.md`](mobile/android/README.md) |
 
 The native SDKs have their own version, starting at 0.1.0, and their own
 changelog, [`mobile/CHANGELOG.md`](mobile/CHANGELOG.md). Their design and the

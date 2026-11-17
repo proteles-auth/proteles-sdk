@@ -17,6 +17,10 @@ The two behave the same way: the same sign-in, the same rules for trusting a
 token, the same refresh and the same sign-out, each written in its platform's
 own idiom. Neither has a web view, and neither ever sees the user's password.
 
+**Neither has had a release yet.** There is no Swift package version tag and
+nothing on Maven Central, so for now an app builds them from this repository:
+each platform's README says how.
+
 ## 1. Register the app
 
 Each app is **one client** in your tenant — one per app, not one per install —

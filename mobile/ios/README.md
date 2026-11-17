@@ -28,9 +28,14 @@ builds) and Swift 6 (Xcode 16 or later). iOS 17.4 is the first version whose
 `ASWebAuthenticationSession` hands an `https` redirect back to the app, and an
 `https` redirect is the only kind this server registers for an app.
 
+**Not released yet:** the repository has no version tag for the Swift
+package, so a version rule such as `from: "0.1.0"` finds nothing. Until the
+first release, choose the `main` branch in Xcode, or use
+`.package(url: "https://github.com/proteles-auth/proteles-sdk", branch: "main")`.
+
 In Xcode, *File › Add Package Dependencies…*, enter
 `https://github.com/proteles-auth/proteles-sdk`, and add the **ProtelesAuth**
-library to your app target. From another package:
+library to your app target. From another package, once a version is released:
 
 ```swift
 dependencies: [
