@@ -47,6 +47,9 @@ import type {
   PlanVersionFields,
   PlanMoveResult,
   PlanVersionList,
+  PlanLicense,
+  GrantLicenseInput,
+  RevokeLicenseInput,
   GetUsageOptions,
   Invitation,
   InviteTenantOwnerInput,
@@ -2034,6 +2037,63 @@ export class ManagementClient {
     );
   }
 
+  /**
+   * Every perpetual license, revoked ones too, newest first, with the tenants
+   * under each now. **Platform token only**: a license is a plan nobody pays
+   * for, so a tenant key is refused even for its own tenant.
+   */
+  async listLicenses(): Promise<PlanLicense[]> {
+    const w = await this.request<wire.PlanLicenseList>("GET", "/api/v1/licenses");
+    return (w.licenses ?? []).map((l) => planLicenseFromWire(l));
+  }
+
+  /**
+   * Grant a perpetual license for an application at `plan`'s current version,
+   * and put every tenant named on it. All or nothing: a tenant that already
+   * holds a license, or has a subscription that can still change, is refused
+   * with a 409 (`conflict`), and an unknown tenant with a 404, and then nothing
+   * is granted. Each tenant's override becomes that version, which it keeps
+   * whatever is published later. **Platform token only.**
+   */
+  async grantLicense(input: GrantLicenseInput): Promise<PlanLicense> {
+    const body: wire.LicenseGrantRequest = {
+      application: input.application,
+      plan: input.plan,
+      tenant_ids: input.tenantIds,
+    };
+    // The server refuses unknown keys, and `note` is optional: send it only
+    // when given.
+    if (input.note !== undefined) body.note = input.note;
+    const w = await this.request<wire.PlanLicense>("POST", "/api/v1/licenses", { body: { ...body } });
+    return planLicenseFromWire(w);
+  }
+
+  /**
+   * Revoke a perpetual license for every tenant under it. Each tenant's plan
+   * is its subscription's again (FREE when it has none), with the week's
+   * deletion grace a downgrade gets, and its owners are mailed what changed.
+   * Final: a revoked license is kept and listed, and refused here again with a
+   * 409. **Platform token only.**
+   */
+  async revokeLicense(id: number, input: RevokeLicenseInput): Promise<PlanLicense> {
+    const w = await this.request<wire.PlanLicense>("POST", `/api/v1/licenses/${segment(String(id))}/revoke`, {
+      body: { reason: input.reason },
+    });
+    return planLicenseFromWire(w);
+  }
+
+  /**
+   * Put one more tenant on a license, at the license's own version (not the
+   * tier's current one). Refused for the reasons `grantLicense` is, and with a
+   * 409 for a revoked license. **Platform token only.**
+   */
+  async addLicenseTenant(id: number, tenantId: string): Promise<PlanLicense> {
+    const w = await this.request<wire.PlanLicense>("POST", `/api/v1/licenses/${segment(String(id))}/tenants`, {
+      body: { tenant_id: tenantId },
+    });
+    return planLicenseFromWire(w);
+  }
+
   /** Set or clear the monthly-active-user soft cap. `null` removes it. */
   async setSoftCap(input: SetSoftCapInput): Promise<SoftCapSet> {
     const w = await this.request<wire.SoftCapSet>("PUT", "/api/v1/usage/cap", {
@@ -2265,6 +2325,8 @@ function toTenant(w: wire.TenantDetail): Tenant {
     plan: w.plan,
     planSubscribed: w.plan_subscribed,
     planOverride: w.plan_override,
+    // Copied only when present: a server before licenses sends none.
+    ...(w.license_id !== undefined ? { licenseId: w.license_id } : {}),
     seatCap: w.seat_cap,
     // Copied only when present: a server from before the switch enforced
     // every plan, and says nothing.
@@ -2641,6 +2703,21 @@ function planVersionFromWire(w: wire.PlanVersion): PlanVersion {
       interval: p.interval,
       sold: p.sold,
     })),
+  };
+}
+
+function planLicenseFromWire(w: wire.PlanLicense): PlanLicense {
+  return {
+    id: w.id,
+    application: w.application,
+    note: w.note,
+    plan: w.plan,
+    versionId: w.version_id,
+    version: w.version,
+    grantedBy: w.granted_by,
+    grantedAt: w.granted_at,
+    revoked: w.revoked ? { by: w.revoked.by, at: w.revoked.at, reason: w.revoked.reason } : null,
+    tenants: (w.tenants ?? []).map((t) => ({ id: t.id, slug: t.slug })),
   };
 }
 

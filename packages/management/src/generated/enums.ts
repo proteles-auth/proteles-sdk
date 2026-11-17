@@ -20,7 +20,7 @@ export type AppsUsersErrorError = "conflict" | "forbidden" | "insufficient_scope
 export type AuthErrorError = "forbidden" | "insufficient_scope" | "owner_unconfirmed" | "unauthorized";
 
 /** `source` - declared by Billing, TenantPlan. */
-export type BillingSource = "none" | "override" | "subscription";
+export type BillingSource = "license" | "none" | "override" | "subscription";
 
 /** `client_type` - declared by AppUpdated, AppsAppSummary. */
 export type ClientType = "confidential" | "public";
@@ -59,7 +59,7 @@ export type PasskeyAttestation = "none" | "required";
 export type PerformedBy = "platform-token" | "tenant-api-key";
 
 /** `plan_binding` - declared by TenantDetail, TenantPlan. */
-export type PlanBinding = "not_enforced" | "plan" | "platform_tenant";
+export type PlanBinding = "licensed" | "not_enforced" | "plan" | "platform_tenant";
 
 /** `plan_override` - declared by TenantDetail, TenantUpdateRequest. */
 export type PlanOverride = "business" | "free" | "team" | null;

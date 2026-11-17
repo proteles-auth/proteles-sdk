@@ -670,14 +670,15 @@ export interface Billing {
   tenant_id: string;
   plan: Plan;
   /**
-   * Why `plan` is what it is, as a question of who pays: `override` (the
-   * operator set it), `subscription` (a subscription in force), or `none`
-   * (nothing pays, so FREE). Close to `GET /api/v1/plan`'s `source`, which
-   * also says `none` for a tenant that has never bought anything; they differ
-   * only while a paid plan is recorded with no subscription in force behind it
-   * (`/plan` names the column, this names who pays).
+   * Why `plan` is what it is, as a question of who pays: `license` (a
+   * perpetual license: nobody pays, ever), `override` (the operator set it, as
+   * a comp), `subscription` (a subscription in force), or `none` (nothing
+   * pays, so FREE). Close to `GET /api/v1/plan`'s `source`, which also says
+   * `none` for a tenant that has never bought anything; they differ only while
+   * a paid plan is recorded with no subscription in force behind it (`/plan`
+   * names the column, this names who pays).
    */
-  source: "override" | "subscription" | "none";
+  source: "license" | "override" | "subscription" | "none";
   /** The platform operator's override, or `null`. */
   override_plan: "free" | "team" | "business" | null;
   /**
@@ -863,6 +864,25 @@ export interface FleetHealth {
    * deployment, so alert on the *rise* rather than the value.
    */
   audit_unsealed_rows: number;
+}
+
+export interface LicenseAddTenantRequest {
+  tenant_id: string;
+}
+
+export interface LicenseGrantRequest {
+  /** Which application it is for. No line breaks. */
+  application: string;
+  /** Optional. */
+  note?: string;
+  plan: Plan;
+  /** The tenants to put on it. Repeats count once. */
+  tenant_ids: string[];
+}
+
+export interface LicenseRevokeRequest {
+  /** Why. Required, and recorded. */
+  reason: string;
 }
 
 /**
@@ -1072,6 +1092,47 @@ export type Plan = "free" | "team" | "business";
 
 export interface PlanDraftRequest {
   plan: Plan;
+}
+
+/** A perpetual license (migration 0209). Never edited and never deleted. */
+export interface PlanLicense {
+  id: number;
+  /** Which of the operator's applications it is for. */
+  application: string;
+  /** The operator's note; may be empty. */
+  note: string;
+  plan: Plan;
+  /**
+   * The version granted (`plan_versions.id`), which the license keeps for
+   * good.
+   */
+  version_id: number;
+  /** Its number within its tier. */
+  version: number;
+  /**
+   * The operator the dashboard named, `the platform token`, or `admin-cli`.
+   * Asserted, not proved, as `asserted_operator` is.
+   */
+  granted_by: string;
+  granted_at: string;
+  /** Who revoked it, when and why; `null` while it is in force. */
+  revoked: {
+    by: string;
+    at: string;
+    reason: string;
+  } | null;
+  /**
+   * The tenants under it now. Empty once revoked; each tenant's trail says it
+   * held it.
+   */
+  tenants: ({
+    id: string;
+    slug: string | null;
+  })[];
+}
+
+export interface PlanLicenseList {
+  licenses: PlanLicense[];
 }
 
 /** What moving every FREE workspace onto a version did. */
@@ -2346,8 +2407,18 @@ export interface TenantDetail {
   challenge_questions_enabled: boolean;
   plan: Plan;
   plan_subscribed: Plan;
-  /** The operator's override, or `null`. When set it is the plan in force. */
+  /**
+   * The operator's override, or `null`. When set it is the plan in force — a
+   * courtesy comp, or a perpetual license's (`license_id`).
+   */
   plan_override: "free" | "team" | "business" | null;
+  /**
+   * The perpetual license the override is, when it is one (`GET
+   * /api/v1/licenses`); `null` for a comp and for no override. The field that
+   * tells the two apart, so neither is cleaned up for the other. While set,
+   * `plan_override` cannot be changed here: revoke the license first.
+   */
+  license_id: number | null;
   /**
    * What a new member grant is held to: the lower of the plan's cap (five on
    * FREE and TEAM; none on BUSINESS, which sells seats; none on any plan where
@@ -2356,9 +2427,11 @@ export interface TenantDetail {
   seat_cap: number | null;
   /**
    * Whether this tenant is held to its plan: the deployment enforces plans
-   * (`PLANS_ENFORCED`) and the tenant is not the platform's own (the default
-   * tenant, which no plan limits). `false`: the plan is recorded and shown,
-   * and limits nothing. `plan_binding` says which of the two it is.
+   * (`PLANS_ENFORCED`), the tenant is not the platform's own (the default
+   * tenant, which no plan limits), and it holds no perpetual license. `false`:
+   * the plan is recorded and shown, and limits nothing — for a licensed
+   * tenant, nothing it counts; its features are still the plan's.
+   * `plan_binding` says which it is.
    */
   plans_enforced: boolean;
   /**
@@ -2366,14 +2439,17 @@ export interface TenantDetail {
    * order: `not_enforced` — the deployment does not enforce plans
    * (`PLANS_ENFORCED` is off), checked first, for every tenant including the
    * default one; `platform_tenant` — plans are enforced, and this is the
-   * platform's own (default) tenant, which no plan limits; `plan` — held to
-   * its plan. `not_enforced` and `platform_tenant` are the two reasons
-   * `plans_enforced` is false, and the only way to tell them apart: on the
-   * default tenant the boolean is false either way, so this is how an operator
-   * whose one tenant is the default reads whether `PLANS_ENFORCED` is on.
-   * Absent from a server before 2026-10-03.
+   * platform's own (default) tenant, which no plan limits; `licensed` — plans
+   * are enforced and the tenant holds a perpetual license (`GET
+   * /api/v1/licenses`): no limit of its plan applies, and what the plan
+   * includes (SAML, SMS, machine identity) is still its plan's; `plan` — held
+   * to its plan. `not_enforced`, `platform_tenant` and `licensed` are the
+   * reasons `plans_enforced` is false, and the only way to tell them apart: on
+   * the default tenant the boolean is false either way, so this is how an
+   * operator whose one tenant is the default reads whether `PLANS_ENFORCED` is
+   * on. Absent from a server before 2026-10-03.
    */
-  plan_binding: "plan" | "not_enforced" | "platform_tenant";
+  plan_binding: "plan" | "not_enforced" | "platform_tenant" | "licensed";
 }
 
 /**
@@ -2485,18 +2561,22 @@ export interface TenantPlan {
   tenant_id: string;
   plan: Plan;
   /**
-   * Who decided the plan: `override` (the operator set one), `subscription`
-   * (the billing provider put the tenant on a paid plan), or `none` (no
-   * override and a subscribed plan of FREE — nothing decided it, which is what
-   * an unpaid tenant is on). The same answer `GET /api/v1/billing`'s `source`
-   * gives for a tenant that never paid.
+   * Who decided the plan: `license` (a perpetual license, which the operator
+   * granted and which is never billed), `override` (the operator set one, as a
+   * comp), `subscription` (the billing provider put the tenant on a paid
+   * plan), or `none` (no override and a subscribed plan of FREE — nothing
+   * decided it, which is what an unpaid tenant is on). The same answer `GET
+   * /api/v1/billing`'s `source` gives for a tenant that never paid.
    */
-  source: "override" | "subscription" | "none";
+  source: "license" | "override" | "subscription" | "none";
   /**
    * Whether this tenant is held to its plan: the deployment enforces plans
-   * (`PLANS_ENFORCED`) and the tenant is not the platform's own (the default
-   * tenant, which no plan limits). `false`: `entitlements` is the unrestricted
-   * set, whatever `plan` says. `plan_binding` says which of the two it is.
+   * (`PLANS_ENFORCED`), the tenant is not the platform's own (the default
+   * tenant, which no plan limits), and it holds no perpetual license. `false`:
+   * `entitlements` is the unrestricted set, whatever `plan` says — except for
+   * a licensed tenant, whose `saml`, `machine_identity`, `sms` and
+   * `enhanced_support` are still its plan version's. `plan_binding` says which
+   * it is.
    */
   enforced: boolean;
   /**
@@ -2504,14 +2584,17 @@ export interface TenantPlan {
    * order: `not_enforced` — the deployment does not enforce plans
    * (`PLANS_ENFORCED` is off), checked first, for every tenant including the
    * default one; `platform_tenant` — plans are enforced, and this is the
-   * platform's own (default) tenant, which no plan limits; `plan` — held to
-   * its plan. `not_enforced` and `platform_tenant` are the two reasons
-   * `enforced` is false, and the only way to tell them apart: on the default
-   * tenant the boolean is false either way, so this is how an operator whose
-   * one tenant is the default reads whether `PLANS_ENFORCED` is on. Absent
-   * from a server before 2026-10-03.
+   * platform's own (default) tenant, which no plan limits; `licensed` — plans
+   * are enforced and the tenant holds a perpetual license (`GET
+   * /api/v1/licenses`): no limit of its plan applies, and what the plan
+   * includes (SAML, SMS, machine identity) is still its plan's; `plan` — held
+   * to its plan. `not_enforced`, `platform_tenant` and `licensed` are the
+   * reasons `enforced` is false, and the only way to tell them apart: on the
+   * default tenant the boolean is false either way, so this is how an operator
+   * whose one tenant is the default reads whether `PLANS_ENFORCED` is on.
+   * Absent from a server before 2026-10-03.
    */
-  plan_binding: "plan" | "not_enforced" | "platform_tenant";
+  plan_binding: "plan" | "not_enforced" | "platform_tenant" | "licensed";
   entitlements: {
     /**
      * Monthly recurring users the plan includes, announced as the soft cap
@@ -2831,7 +2914,8 @@ export interface TenantUpdateRequest {
    * agreement, a test tenant), or `null` to clear it and let the subscription
    * decide. The billing provider never writes this, so an override survives
    * every subscription change. Audited as `tenant.plan_override_set`
-   * (warning).
+   * (warning). Refused (409) for a tenant that holds a perpetual license: its
+   * override is the license's, and only revoking the license changes it.
    */
   plan_override?: "free" | "team" | "business" | null;
 }
@@ -3646,7 +3730,7 @@ export interface WebhookEndpointWriteResult {
  * refused at write time rather than stored, because "a typo would otherwise
  * look configured and silently never fire".
  */
-export type WebhookEventName = "mfa.admin_reset" | "webhook.dead_letter" | "webhook.endpoint_disabled" | "user.created" | "user.deactivated" | "user.reactivated" | "account.deleted" | "email.changed" | "mfa.self_recovery_scheduled" | "mfa.self_recovery_completed" | "app.created" | "app.updated" | "app.deleted" | "challenge_questions.locked" | "challenge_questions.cleared";
+export type WebhookEventName = "mfa.admin_reset" | "webhook.dead_letter" | "webhook.endpoint_disabled" | "user.created" | "user.deactivated" | "user.reactivated" | "account.deleted" | "email.changed" | "mfa.self_recovery_scheduled" | "mfa.self_recovery_completed" | "app.created" | "app.updated" | "app.deleted" | "challenge_questions.locked" | "challenge_questions.cleared" | "saml_sp.created" | "saml_sp.updated" | "saml_sp.deleted";
 
 export interface WebhookReplayOneResult {
   requeued: number;
