@@ -53,6 +53,29 @@ link below goes to its page on npm. The native SDKs have their own changelog,
     do not retry), `unavailable` (503: try again), `reset_mail_limit` (429),
     and the password link's `machine_account`, `account_deactivated`,
     `signs_in_with_saml`, `unconfirmed_address` and `no_address` (409).
+- For the server's perpetual licenses and SAML service-provider events
+  (`spec/` is now the server's at `38a2205a`):
+  - `listLicenses()`, `grantLicense({ application, plan, tenantIds, note })`,
+    `revokeLicense(id, { reason })` and `addLicenseTenant(id, tenantId)`, for
+    `/api/v1/licenses`: a plan held forever without billing, for one of the
+    operator's own applications. Each answers a `PlanLicense`. **Platform
+    token only**; a tenant key is refused. A grant is all or nothing, and a
+    tenant that already holds a license or has a subscription that can still
+    change is refused with a 409 (`conflict`). A revocation is final.
+  - `Tenant` gains `licenseId`, the license its plan override is, or `null`.
+    While it is set, `updateTenant` refuses `planOverride` with a 409. Absent
+    from a server before 2026-11-12.
+  - `PlanBinding` gains `"licensed"` (no limit of the plan applies, and its
+    features are still the plan version's), and `TenantPlan.source` and
+    `Billing.source` gain `"license"`. Code that switches over either should
+    handle the new value.
+  - `WebhookEventName` gains `saml_sp.created`, `saml_sp.updated` and
+    `saml_sp.deleted`, sent when a SAML service provider in the workspace is
+    registered, removed, or changed where its messages go or who may speak
+    as it (entity ID, ACS URLs, default ACS URL, single logout URL or
+    request-signing certificate; a rename sends nothing). A server older
+    than these events refuses a webhook endpoint that subscribes to them
+    with a 400.
 
 ### Changed (`@proteles/management`)
 
