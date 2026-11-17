@@ -26,7 +26,7 @@
         "operationId": "getUsage",
         "summary": "Monthly recurring users, now and over time",
         "description": "What this tenant is consuming, and useful before any\npricing exists: \"how much is this tenant using\" is a question an operator has\ntoday and could previously answer only with hand-written SQL over the audit log.\n\nThe number's definition travels with it in every response. A bare `active_users`\ninvites the reader to supply their own \u2014 rolling thirty days, sign-ins only, per\napplication \u2014 and each of those is a different figure. An invoice dispute is a\nbad place to discover which one was meant.\n\n`active_users` is the last point of `series` by construction, read from one query\nrather than two, so the headline and the chart cannot disagree across a month\nboundary.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope(SCOPE_USAGE_READ)   // \"usage:read\" \u2014 STRICT\n\nStrict, and for a narrower reason than the other strict scopes: this is not a\ncredential and reading it takes nothing over. It is the tenant's commercial\nposition \u2014 how many customers they have and how fast that is changing \u2014 which is\nnot something an unscoped integration key should acquire by default.\n\nThere is deliberately no `usage:write`. These numbers are recorded by the act of\nsomebody signing in, and an endpoint that could adjust them would be an endpoint\nthat could adjust an invoice.\n",
+        "x-auth": "Needs scope `usage:read`. A key with no scopes is refused.\n\nStrict, and for a narrower reason than the other strict scopes: this is not a credential and reading it takes nothing over. It is the tenant's commercial position \u2014 how many customers they have and how fast that is changing \u2014 which is not something an unscoped integration key should acquire by default.\n\nThere is deliberately no `usage:write`. These numbers are recorded by the act of somebody signing in, and an endpoint that could adjust them would be an endpoint that could adjust an invoice.",
         "security": [
           {
             "bearerAuth": []
@@ -104,7 +104,7 @@
         "operationId": "getFleetHealth",
         "summary": "The operational numbers that live in Postgres",
         "description": "Webhook queue depth, unacknowledged dead letters, audit export lag in seals, and\naudit rows no seal covers. Each is a silent failure: the first symptom of any of\nthem is somebody asking why an integration went quiet, or an auditor asking for a\nrange that was never attested.\n\nThese were reachable only through `/metrics`, which sits behind `METRICS_TOKEN`,\noutside tenant resolution, and is shaped for a scraper. Prometheus could graph\nthem; the person on call with a browser could not see them at all.\n\nReuses the same cached, bounded read the scrape uses \u2014 a 2s ceiling and a 10s\nfloor \u2014 so a second reader cannot double the aggregate queries, and a struggling\ndatabase cannot hold up the page somebody opened *because* it is struggling.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only, because these are fleet-wide: the query carries no tenant\npredicate, so a tenant reading it would learn how much traffic every other tenant\nis generating. There is deliberately no per-tenant version \u2014 a tenant's own dead\nletters are already at /api/v1/webhook/dead-letters, scoped like everything else.\n",
+        "x-auth": "Platform only, because these are fleet-wide: the query carries no tenant predicate, so a tenant reading it would learn how much traffic every other tenant is generating. There is deliberately no per-tenant version \u2014 a tenant's own dead letters are already at /api/v1/webhook/dead-letters, scoped like everything else.",
         "security": [
           {
             "bearerAuth": []
@@ -141,7 +141,7 @@
         "operationId": "getMailSettings",
         "summary": "Where this tenant's mail goes out from",
         "description": "Reads the tenant's SMTP relay, or reports that it uses the platform default.\n\nThe password is never returned in any form. A tenant with no configuration is answered\n200 with `configured: false` and the name of the fallback, not 404 \u2014 \"this tenant uses\nthe platform relay\" is an answer about a working system, and a 404 reads as \"mail is\nbroken\" to anyone who does not already know the difference.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope(SCOPE_MAIL_READ)   // \"mail:read\" \u2014 STRICT\n\nStrict, unlike the older read scopes: a key that declared no scopes at all does NOT\nacquire it. `mail:read` and `mail:write` ship after scope enforcement, so no key minted\nbefore them has ever been able to use them \u2014 the same asymmetry as `domains:write`\n(management.rs) \u2014 and the stored host and username are a map of the tenant's mail\ninfrastructure.\n",
+        "x-auth": "Needs scope `mail:read`. A key with no scopes is refused.\n\nStrict, unlike the older read scopes: a key that declared no scopes at all does NOT acquire it. `mail:read` and `mail:write` ship after scope enforcement, so no key minted before them has ever been able to use them \u2014 the same asymmetry as `domains:write` \u2014 and the stored host and username are a map of the tenant's mail infrastructure.",
         "security": [
           {
             "bearerAuth": []
@@ -205,7 +205,7 @@
         "operationId": "putMailSettings",
         "summary": "Set or replace the relay",
         "description": "Writes the tenant's SMTP settings, replacing any that were there.\n\nRefused before anything is stored: an unknown `encryption` name, a `from_address` that is\nnot an address, a password with no username (SMTP AUTH has no such shape), and\nunencrypted SMTP to anything but loopback. The last is the one worth stating \u2014 cleartext\nSMTP off-box puts the password *and every reset link* on the network in the clear.\n\nThe configuration is also *built* as a transport before storing, so one the sender cannot\nuse is a 400 rather than a saved setting that fails at 3am on somebody's password reset.\n\nThe delivery-outcome fields survive an edit. Renaming the From: line has not un-sent\nyesterday's mail, and clearing them would tell an operator their working relay had never\nsent anything.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_MAIL_WRITE)   // \"mail:write\" \u2014 STRICT\n\nThe strictest thing in this group, and the reason both scopes are strict: whoever can\nwrite these settings can point the relay at a host they control, and every password-reset\nlink this tenant sends then arrives in their inbox. \"Forgot password\" becomes a way of\ncollecting accounts, with no step that looks unusual to the user.\n",
+        "x-auth": "Needs scope `mail:write`. A key with no scopes is refused.\n\nThe strictest thing in this group, and the reason both scopes are strict: whoever can write these settings can point the relay at a host they control, and every password-reset link this tenant sends then arrives in their inbox. \"Forgot password\" becomes a way of collecting accounts, with no step that looks unusual to the user.",
         "security": [
           {
             "bearerAuth": []
@@ -279,7 +279,7 @@
         "operationId": "deleteMailSettings",
         "summary": "Fall back to the platform relay",
         "description": "Removes the tenant's settings. Its mail then goes out through the platform default.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope(SCOPE_MAIL_WRITE)   // \"mail:write\" \u2014 STRICT\n",
+        "x-auth": "Needs scope `mail:write`. A key with no scopes is refused.",
         "security": [
           {
             "bearerAuth": []
@@ -348,7 +348,7 @@
         "operationId": "testMailSettings",
         "summary": "Send a test message through the stored configuration",
         "description": "Most of the point of the admin surface. Without it, the way an operator finds out their\nSMTP settings are wrong is that a user cannot get back into their account \u2014 both the worst\ntime to discover it and the hardest to attribute.\n\nIt sends through the **stored** configuration, not one supplied in the body: testing\nsomething other than what will be used is a test that can pass while the real thing is\nbroken. Save, then test.\n\nA relay that refuses answers **200** with `sent: false` and the relay's own message. See\n`MailTestResult`.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_MAIL_WRITE)   // \"mail:write\", not mail:read\n\nWrite rather than read, deliberately: this sends real mail, to an address the caller\nchooses, from this tenant's domain. That is a capability, not an inspection.\n",
+        "x-auth": "Needs scope `mail:write`. A key with no scopes is refused.\n\nWrite rather than read, deliberately: this sends real mail, to an address the caller chooses, from this tenant's domain. That is a capability, not an inspection.",
         "security": [
           {
             "bearerAuth": []
@@ -424,7 +424,7 @@
         "operationId": "createApp",
         "summary": "Provision an OAuth client (an \"app\") in a tenant",
         "description": "The operator's way to create a client. Distinct from RFC 7591\nself-registration at `POST /register` in three ways that matter:\n\n* The created client gets **no registration access token**, so it is\n  managed here and nowhere else \u2014 \"handing it a self-management\n  credential would mean anyone who obtained that token could rewrite an\n  app the operator created\".\n* It is therefore not *self-registered*, so it neither counts against nor\n  is refused by the per-tenant registration quota: \"squatters filling a\n  tenant would lock its operator out of provisioning the very client\n  needed to fix it\".\n* It cannot be deleted by `DELETE /api/v1/apps/{client_id}`, which\n  reaches self-registered rows only.\n\nThree properties are server-set and not expressible in the request body:\n`require_pkce` is always `true`, `logo_uri` is always null, and\n`is_active` is always `true`.\n\nWith a tenant's own key, the tenant is held to its plan version's\napplication limit where plans are enforced: at the limit,\n403 `limit_reached`, and nothing already created is removed. The platform\ntoken is not held to it.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)                        // :753\nauth.require_scope_if_restricted(SCOPE_APPS_WRITE)      // :757  (\"apps:write\")\n",
+        "x-auth": "Needs scope `apps:write`, when the key has scopes. A key with no scopes may call this.",
         "parameters": [
           {
             "name": "X-Proteles-Operator",
@@ -517,7 +517,7 @@
         "operationId": "listApps",
         "summary": "List a tenant's clients, with its self-registration quota",
         "description": "Everything in the tenant's client namespace, plus the quota that governs\nself-registration. Inactive clients are included on purpose: \"a disabled\nclient still holds its `client_id` in the tenant's namespace and still\ncounts against the registration quota, so a listing that hid it would say\n'3 apps' while the quota said '5 used'\".\n\n`self_registered.used` is counted from the rows in this same response\nrather than from a second query, \"so the number and the list it describes\ncannot disagree\". `self_registered.source` says which level the\nlimit came from, because \"a dashboard showing '100' with no hint it is the\ndeployment default invites an operator to PATCH the tenant to 100 and\nbelieve they changed something\".\n\nNOT PAGINATED \u2014 `limit` is ignored and every row is returned. The\n`used` derivation is only correct while that stays true.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)                                            // :837\nauth.require_any_scope_if_restricted(&[SCOPE_APPS_READ, SCOPE_APPS_WRITE]) // :841\n\"apps:write\" satisfies this read (tests/management_api.rs).\n",
+        "x-auth": "Needs one of the scopes `apps:read` or `apps:write`, when the key has scopes. A key with no scopes may call this.\n\n\"apps:write\" satisfies this read.",
         "parameters": [
           {
             "name": "tenant_id",
@@ -598,7 +598,7 @@
         "operationId": "deleteApp",
         "summary": "Delete a SELF-REGISTERED client (the operator's release valve)",
         "description": "Deletes a client that arrived through RFC 7591 self-registration, and\nnothing else. It exists because without it a registration quota is a\nweapon rather than a defence: nothing else removes clients \u2014 no\nbackground sweep expires them, and the only other DELETE is the RFC\n7592 route that requires the client's own registration access token. An\nattacker who fills a tenant to its cap and discards those tokens would\notherwise leave that tenant's registration endpoint dead permanently,\nwith direct database access as the only remedy.\n\nIt cannot touch an operator-provisioned client \u2014 one created by\n`POST /api/v1/apps` or by `admin-cli seed-client`. Deleting a client\ncascades to its tokens and consents, so that restriction is enforced by\nthe delete itself rather than by a check in front of it: the blast radius\nof a mistyped `client_id` deserves more than an `if`.\n\nThere is no bulk form: recovering a tenant filled to 100 is a script.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)                        // :719\nauth.require_scope_if_restricted(SCOPE_APPS_WRITE)    // :723  (\"apps:write\")\n",
+        "x-auth": "Needs scope `apps:write`, when the key has scopes. A key with no scopes may call this.",
         "parameters": [
           {
             "name": "client_id",
@@ -755,7 +755,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_AUDIT_READ) \u2014 management.rs. Only `audit:read`; unlike the webhook and app listings there is no write sibling that also satisfies it."
+          "tenant-key": "Needs scope `audit:read`, when the key has scopes. A key with no scopes may call this.\n\nOnly `audit:read`; unlike the webhook and app listings there is no write sibling that also satisfies it."
         },
         "parameters": [
           {
@@ -885,7 +885,7 @@
         "operationId": "exportAudit",
         "summary": "Download the filtered trail as NDJSON",
         "description": "The same filters, the same row shape, as a file. One JSON object per line.\n\n**Every response ends with a summary line**, and that is what makes it safe to save:\n\n```\n{\"kind\":\"row\",\"event_type\":\"login.success\",\u2026}\n{\"kind\":\"row\",\"event_type\":\"login.failure\",\u2026}\n{\"kind\":\"summary\",\"complete\":true,\"rows\":2,\"next_cursor\":null}\n```\n\nA truncated export that looks complete is the failure this avoids. A response header would not survive `curl -o audit.ndjson`; a trailing line does \u2014 and a transfer that died mid-flight has no trailer at all, which is also detectable. Read `complete`; when it is false, request again with `cursor` set to `next_cursor`.\n\n**Not CSV, deliberately.** CSV is what a customer opens, and it cannot carry `detail_json` without either flattening the structure away or quoting a JSON document inside a cell. The first is lossy about the only machine-readable half of the row; the second is a spreadsheet-shaped footgun.\n\n**Paged rather than streamed**, at most 5000 rows per request. Streaming would need an async-stream dependency inside the authorization server's trust boundary to solve a problem paging already solves \u2014 and a long-lived response is what times out for exactly the tenant with a year of trail.\n\n**Auth:** `audit:read`, the same scope as the list.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(audit:read)",
+        "x-auth": "Needs scope `audit:read`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Audit"
         ],
@@ -1016,7 +1016,7 @@
         "operationId": "upsertConnection",
         "summary": "Create or replace a tenant's \"sign in with X\" connection",
         "description": "Configures one social provider for one tenant. Upsert semantics: there is\nno create-vs-update distinction and no 201 \u2014 a first configuration and a\nrotation of an existing secret both answer 200.\n\nThe submitted `client_secret` is encrypted with the tenant's own data key\nbefore storage, \"so one tenant's leaked key can never expose another's\nconnection secrets\", and is never echoed back by this\nendpoint or by the listing.\n\nTwo cache effects, and they fail differently. This node's per-tenant OIDC\nregistry is dropped immediately so the change takes effect on the next\nlogin. Other nodes are told via a cache-epoch bump \u2014 and if\nthat bump fails, the request still succeeds with 200 while logging an\nerror, because \"a lost bump leaves them serving the previous client secret\nwith nothing to indicate it\". A 200 therefore does not\nguarantee every replica has the new secret.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)                            // :1902\nauth.require_scope_if_restricted(SCOPE_CONNECTIONS_WRITE)   // :1906  (\"connections:write\")\n",
+        "x-auth": "Needs scope `connections:write`, when the key has scopes. A key with no scopes may call this.",
         "parameters": [
           {
             "name": "X-Proteles-Operator",
@@ -1095,7 +1095,7 @@
         "operationId": "listConnections",
         "summary": "List the tenant's configured social connections",
         "description": "Which providers are configured and whether each is enabled. \"Secrets are\nnever returned; only whether each provider is configured and enabled\"\n\u2014 neither the secret nor its encrypted form appears.\n\nNot paginated; `limit` is accepted and never read, so even a non-integer value is not refused.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)                                                          // :1961\nauth.require_any_scope_if_restricted(&[SCOPE_CONNECTIONS_READ, SCOPE_CONNECTIONS_WRITE]) // :1965\n\"connections:write\" satisfies this read (tests/management_api.rs).\n",
+        "x-auth": "Needs one of the scopes `connections:read` or `connections:write`, when the key has scopes. A key with no scopes may call this.\n\n\"connections:write\" satisfies this read.",
         "parameters": [
           {
             "name": "tenant_id",
@@ -1451,7 +1451,7 @@
             }
           },
           "409": {
-            "description": "`passkey_attestation: \"required\"` with no attestation CA registered. That state fails every registration, so it is refused rather than created. It is checked after the quotas and `mfa_grace_days` are written, so a 409 leaves those, and `branding`, already changed."
+            "description": "`conflict` \u2014 `passkey_attestation: \"required\"` with no attestation CA registered (that state fails every registration, so it is refused rather than created); or `plan_override` named for a tenant that holds a perpetual license (`license_id`), whose plan is the license's until it is revoked. Both are checked before anything is written, so a 409 changes nothing."
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -2273,7 +2273,7 @@
         "operationId": "lookupUser",
         "summary": "Look one user up by exact username, with their second-factor status",
         "description": "The first step of the operator support flow: \"before disarming an\naccount, an operator should be able to confirm they have the right person\nand see what they are about to remove\".\n\nDeliberately a lookup by EXACT username and not a listing, \"so this is not\na bulk export of the tenant's user base\". No prefix search, no\npagination, no enumeration.\n\nIt is also the only way to obtain the `user_id` that the three action\nendpoints below take in their path.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)                                  // :904\nauth.require_any_scope_if_restricted(\n    &[SCOPE_USERS_READ, SCOPE_RESET_MFA, SCOPE_RESET_PASSWORD,\n      SCOPE_REVOKE_SESSIONS])\nThe three ACTION scopes are accepted here as well as \"users:read\":\n\"resetting, sending a link (R9) or revoking requires the user id, and this\nlookup is the only way to get one \u2014 a key granted the action but not the lookup could never\nuse what it was given\" (:908-910). Note the asymmetry with the actions\nthemselves, which use the strict `require_scope`: an UNSCOPED tenant key\npasses this guard (held-to-what-you-declare) but is refused by all three\nactions.\n",
+        "x-auth": "Needs one of the scopes `users:read`, `users:reset_mfa`, `users:reset_password` or `users:revoke_sessions`, when the key has scopes. A key with no scopes may call this.\n\nThe three ACTION scopes are accepted here as well as \"users:read\": \"resetting, sending a link (R9) or revoking requires the user id, and this lookup is the only way to get one \u2014 a key granted the action but not the lookup could never use what it was given\". Note the asymmetry with the actions themselves, which are strict: a key with no scopes passes this check but is refused by all three actions.",
         "parameters": [
           {
             "name": "username",
@@ -2393,7 +2393,7 @@
         "operationId": "resetUserMfa",
         "summary": "Clear a user's second factors (the lost-phone response)",
         "description": "\"The way back in for someone who has lost both their authenticator and\ntheir recovery codes. It is a backdoor by design, so it is: gated behind\nan explicit scope, strictly tenant-scoped, audited at warning severity\nwith a required reason, and limited to *second* factors \u2014 it never touches\nthe primary credential, so it can weaken an account but never strand its\nowner\".\n\nWhat it does, in order: reads whether a confirmed TOTP\nenrolment and a pending one exist, **revokes every session first**, then\ndisables TOTP, then deletes every passkey. Revocation comes first and\nis part of the reset itself, so that \"reset without revoking\" is not\npossible \u2014 without it \"the cookie that survived the reset could enrol a\nbrand new factor in one POST, with nothing to present, and that factor\noutlived everything the operator had just cleared\".\n\nUnder a `required` tenant MFA policy the user meets forced enrolment at\ntheir next sign-in, which is the intended landing.\n\nSide effects beyond the response: an `mfa.admin_reset` audit row at\n`warning` severity carrying `totp=\u2026 passkeys=\u2026 pending=\u2026 reason=\u2026`,\nand a best-effort `mfa.admin_reset` webhook fired AFTER the\naudit row because \"the reset has already happened and must stand whether\nor not anyone can be told about it\". A webhook failure does\nnot affect the response. A second-factor reset the user asked for by email\nand is waiting out is called off (`mfa.self_recovery_cancelled` with\n`reason=administrator_reset`), and the user is mailed a notice.\n\nWho may be reset (since R8, one rule with the console's person page): a\n**tenant key** removes no factors of somebody who administers the\nworkspace (403 `forbidden`; an owner does that in the console), and is\nheld off for 7 days after the user's email address changed, their\nchallenge questions were removed, a backup email address was added or their\npassword was reset with a link sent to their backup address\n(409 `recent_recovery_change`). Either\nrefusal writes `user.admin_reset_refused` against the user and mails them\nthat an administrator was stopped, at most once a day. The platform token\nis neither: it is the operator's backstop.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)              // :958\nauth.require_scope(SCOPE_RESET_MFA)           // :962  (\"users:reset_mfa\")\nSTRICT, not held-to-what-you-declare: an UNSCOPED tenant key is REFUSED.\n\"Keys created before this endpoint existed were never granted the power to\ndisarm an account, and silently handing it to them would be a privilege\nescalation introduced by a deploy\" (:68-74). Pinned by\ntests/mfa_admin_reset.rs.\n",
+        "x-auth": "Needs scope `users:reset_mfa`. A key with no scopes is refused.\n\nSTRICT, not held-to-what-you-declare: an UNSCOPED tenant key is REFUSED. \"Keys created before this endpoint existed were never granted the power to disarm an account, and silently handing it to them would be a privilege escalation introduced by a deploy\".",
         "x-rate-limit": "Its own tight bucket, \"management_user_action\", matched AHEAD of the\ngeneral `/api/v1/` arm: RATE_LIMIT_USER_ACTION_PER_MIN, default 10 per\nminute (rate_limit/mod.rs, config.rs). \"Without it, a key that\nhas legitimately been granted `users:reset_mfa` can disarm an entire\ntenant account by account as fast as the network allows\"\n(rate_limit/mod.rs).\n",
         "parameters": [
           {
@@ -2513,7 +2513,7 @@
         "operationId": "removeUserBackupEmail",
         "summary": "Remove a user's backup email address",
         "description": "The console's **Remove backup address**, by the Management API (R12), through the same code. The user's backup email address is removed and **every live password reset link the account holds is withdrawn** \u2014 the ones mailed to the email address as well as the backup's. Do this first when someone says their personal mailbox was taken over, then send them a password link. The caller can only remove a backup: adding or changing one is the user's own, on their account page.\n\nThe user is told at their own addresses (\"An administrator removed {addr} as the backup email address on your account\u2026\"), never who or why; the address removed is told it is no longer a backup address, while the workspace has backup addresses on.\n\nSide effects: one `backup_email.removed_by_administrator` audit row at `warning` severity, keyed to the user, with `by=tenant-api-key` or `by=platform-token`, the `reason` and, for the platform token, the asserted operator; never the address. No webhook fires (the user is told directly).\n\n**Who may remove whose** (one rule with the console's person page): a tenant key removes the backup of anybody who neither owns nor administers the workspace, and is held off for 7 days after a change to how the user gets back in (409). Nobody in a workspace removes an owner's backup; the platform token may remove anybody's and is never held: it is the operator's backstop.",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_RESET_PASSWORD)   (\"users:reset_password\")\nSTRICT: an UNSCOPED tenant key is REFUSED, and so is a key holding only\n\"users:reset_mfa\". Where a user's reset links go is this scope's business.\n",
+        "x-auth": "Needs scope `users:reset_password`. A key with no scopes is refused.\n\nSTRICT: an UNSCOPED tenant key is REFUSED, and so is a key holding only \"users:reset_mfa\". Where a user's reset links go is this scope's business.",
         "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset, the\nsession revocation and the password link: RATE_LIMIT_USER_ACTION_PER_MIN,\ndefault 10/min (rate_limit/mod.rs).\n",
         "parameters": [
           {
@@ -2633,7 +2633,7 @@
         "operationId": "sendUserPasswordResetLink",
         "summary": "Mail a user a link to choose a new password",
         "description": "The console's **Send the link**, by the Management API (R9), through the same code. A link to choose a new password goes to the user's own confirmed email address, and a separate link to their backup email address when one is in force (R11) — the caller decides *whether* a link goes, never *where*, and never sees it. It lasts **24 hours** and works once. Until it is used nothing about the account changes: the password keeps working and nobody is signed out. Using it sets the password and ends every session, as any reset link does.\n\nThe mail, subject \"Choose a new {app} password\", says an administrator of the workspace sent it, and never who or why. The link points at the workspace's own sign-in host.\n\nSide effects: one `password.admin_reset_requested` audit row at `warning` severity, keyed to the user, with `by=tenant-api-key` or `by=platform-token`, `expires_at`, the optional `reason` and, for the platform token, the asserted operator; never the address. When the link is used, `password.reset_completed` says `link_issued_by`. A link the user asks for at `/account/forgot` does not withdraw this one; this one withdraws every live link the account held. No webhook fires: the user is told directly, by the mail.\n\n**Who may be sent one** (one rule with the console's person page): a tenant key may send a link to anybody in its workspace, owners and administrators included, because the link goes only to their own mailbox. A key is held off for 7 days after the user's email address changed, their challenge questions were removed, a backup email address was added or their password was reset with a link sent to their backup address (409 `recent_recovery_change`); that refusal is recorded against the user (`user.admin_reset_refused`) and they are mailed that an administrator was stopped, at most once a day. The platform token is never held: it is the operator's backstop.\n\n**Do not mint `users:reset_password` keys for the platform's own workspace**, where the console lets only owners act on anybody. Its keys page does not offer the scope, and refuses a post that names it; only the platform token could mint one there.",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_RESET_PASSWORD)   (\"users:reset_password\")\nSTRICT: an UNSCOPED tenant key is REFUSED, and so is a key holding only\n\"users:reset_mfa\". The endpoint is new, so no key minted before it was\never able to do this, and inheriting it on deploy would be an escalation.\nWithheld from sign-up; an owner mints it at /admin/keys, behind step-up,\nonce a workspace made at sign-up is paid or approved (TP-13).\n",
+        "x-auth": "Needs scope `users:reset_password`. A key with no scopes is refused.\n\nSTRICT: an UNSCOPED tenant key is REFUSED, and so is a key holding only \"users:reset_mfa\". The endpoint is new, so no key minted before it was ever able to do this, and inheriting it on deploy would be an escalation. Withheld from sign-up; an owner mints it at /admin/keys, behind step-up, once a workspace made at sign-up is paid or approved (TP-13).",
         "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset and the\nsession revocation: RATE_LIMIT_USER_ACTION_PER_MIN, default 10/min\n(rate_limit/mod.rs). Apart from it, the administrators' own mail budget for\none account, 3 an hour and 10 a day, counted apart from the user's own\nrequests: 429 `reset_mail_limit`.\n",
         "parameters": [
           {
@@ -2776,7 +2776,7 @@
         "operationId": "revokeUserSessions",
         "summary": "End every session and refresh token a user holds (the compromise response)",
         "description": "Distinct from the MFA reset, which also revokes: this one leaves the\naccount's factors alone. That is the difference between \"someone has their\nsession\" and \"they have lost their phone\", and conflating them makes the\ncompromise response destroy credentials the user still holds and will need\nto get back in.\n\nWhat is actually killed: \"sessions, the two half-login cookies, refresh\ntokens, authorization codes and device codes \u2014 anything issued at or\nbefore the returned instant is refused from the next request onward, on\nevery replica, with no cache to go stale\". Access tokens already minted\nare refused at introspection and userinfo too; only an API that verifies\nthe JWT without asking this server accepts one until it expires.\nThe response says so in `note` rather than letting \"revoked\" imply more\nthan it does.\n\nSide effect: a `sessions.revoked` audit row at `warning` severity carrying\nthe reason and the acting credential. No webhook is fired \u2014 unlike the MFA\nreset.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)                  // :1056\nauth.require_scope(SCOPE_REVOKE_SESSIONS)         // :1060  (\"users:revoke_sessions\")\nSTRICT: an unscoped tenant key is refused. Deliberately a SEPARATE scope\nfrom \"users:reset_mfa\" and not implied by it \u2014 \"an operator who can help\nwith a lost phone should not thereby be able to sign an executive out of\nevery device mid-quarter-end. Granting both to the same key is a decision,\nnot a default\" (:82-88). Pinned by tests/mfa_admin_reset.rs.\n",
+        "x-auth": "Needs scope `users:revoke_sessions`. A key with no scopes is refused.\n\nSTRICT: an unscoped tenant key is refused. Deliberately a SEPARATE scope from \"users:reset_mfa\" and not implied by it \u2014 \"an operator who can help with a lost phone should not thereby be able to sign an executive out of every device mid-quarter-end. Granting both to the same key is a decision, not a default\".",
         "x-rate-limit": "Shares the \"management_user_action\" bucket with the MFA reset and the\npassword link: RATE_LIMIT_USER_ACTION_PER_MIN, default 10/min\n(rate_limit/mod.rs, config.rs). A shared budget is deliberate \u2014 \"these guess no secret, so\nspending one budget buys no progress against the other\"\n(rate_limit/mod.rs).\n",
         "parameters": [
           {
@@ -2869,7 +2869,7 @@
         "operationId": "deactivateUser",
         "summary": "Turn an account off and end its sessions",
         "description": "Sets `is_active = false`, then revokes the account's sessions, in that order.\n\nBoth are needed: `is_active` is checked when a credential is *presented*, so a user who is\nalready signed in keeps working until their sessions are revoked too. Deactivating first\nmeans the window between the two denies new sign-ins rather than allowing them.\n\nEmits two audit rows: `user.deactivated` and `sessions.revoked`, both `warning`. Separate\nrows because `sessions.revoked` is what an operator greps for when asking why a session\ndied \u2014 folding it into the deactivation detail would make that unanswerable here.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_USERS_WRITE)   // STRICT, unlike createUser",
+        "x-auth": "Needs scope `users:write`. A key with no scopes is refused.",
         "parameters": [
           {
             "name": "user_id",
@@ -2929,7 +2929,7 @@
         "operationId": "reactivateUser",
         "summary": "Turn an account back on",
         "description": "Sets `is_active = true`. Does not restore sessions \u2014 revocation is not reversible, so the\nuser signs in again.\n\nEmits `user.reactivated` at `warning`: handing access back is not more routine than taking\nit away.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope(SCOPE_USERS_WRITE)   // STRICT, unlike createUser",
+        "x-auth": "Needs scope `users:write`. A key with no scopes is refused.",
         "parameters": [
           {
             "name": "user_id",
@@ -2993,7 +2993,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_any_scope_if_restricted(&[SCOPE_WEBHOOKS_READ, SCOPE_WEBHOOKS_WRITE]) \u2014 management.rs."
+          "tenant-key": "Needs one of the scopes `webhooks:read` or `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "parameters": [
           {
@@ -3084,7 +3084,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "requestBody": {
           "required": false,
@@ -3147,7 +3147,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "requestBody": {
           "required": true,
@@ -3210,7 +3210,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "parameters": [
           {
@@ -3288,7 +3288,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_any_scope_if_restricted(&[SCOPE_WEBHOOKS_READ, SCOPE_WEBHOOKS_WRITE]) \u2014 management.rs."
+          "tenant-key": "Needs one of the scopes `webhooks:read` or `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "parameters": [
           {
@@ -3362,7 +3362,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "requestBody": {
           "required": false,
@@ -3425,7 +3425,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "parameters": [
           {
@@ -3503,7 +3503,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_any_scope_if_restricted(&[SCOPE_WEBHOOKS_READ, SCOPE_WEBHOOKS_WRITE]) \u2014 management.rs. A key with no scopes at all is unrestricted (management.rs); a key that declares scopes must hold `webhooks:read` or `webhooks:write`."
+          "tenant-key": "Needs one of the scopes `webhooks:read` or `webhooks:write`, when the key has scopes. A key with no scopes may call this.\n\nA key with no scopes at all is unrestricted; a key that declares scopes must hold `webhooks:read` or `webhooks:write`."
         },
         "parameters": [
           {
@@ -3562,7 +3562,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs. Unscoped keys keep the authority they have always had; a scoped key needs `webhooks:write` (see the reasoning at management.rs)."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this.\n\nUnscoped keys keep the authority they have always had; a scoped key needs `webhooks:write`."
         },
         "requestBody": {
           "required": true,
@@ -3644,7 +3644,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_any_scope_if_restricted(&[SCOPE_WEBHOOKS_READ, SCOPE_WEBHOOKS_WRITE]) \u2014 management.rs."
+          "tenant-key": "Needs one of the scopes `webhooks:read` or `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "parameters": [
           {
@@ -3710,7 +3710,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "requestBody": {
           "required": true,
@@ -3785,7 +3785,7 @@
         ],
         "x-auth": {
           "platform": "allowed",
-          "tenant-key": "require_scope_if_restricted(SCOPE_WEBHOOKS_WRITE) \u2014 management.rs."
+          "tenant-key": "Needs scope `webhooks:write`, when the key has scopes. A key with no scopes may call this."
         },
         "parameters": [
           {
@@ -3906,7 +3906,7 @@
         "operationId": "rotateAppSecret",
         "summary": "Issue a new client secret while the old one still works",
         "description": "The gap this closes: a machine client's secret could previously only be replaced by deleting and recreating the client, which changes the `client_id` and so requires every consumer to be reconfigured at the same moment. That makes routine credential hygiene an outage, so it does not happen \u2014 which is the actual security problem.\n\nTwo secrets are live at once. The new one is returned here, once; the old one keeps authenticating until `previous_secret_expires_at`, after which it stops. Retire it early with `/retire-secret` once every consumer has moved.\n\n**Audit:** `client_secret.rotated` (warning), carrying the overlap.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(apps:write)",
+        "x-auth": "Needs scope `apps:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Apps"
         ],
@@ -3986,7 +3986,7 @@
         "operationId": "retireAppSecret",
         "summary": "End the overlap early, once every consumer has the new secret",
         "description": "Stops the previous secret authenticating immediately, rather than waiting for `previous_secret_expires_at`. The point of rotation is that the window exists; the point of this is that it does not have to be waited out once it is no longer needed.\n\n**Idempotent.** A client with no rotation window open is a 204, not a 404: the caller asked for the outgoing secret to be dead, and it is.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(apps:write)",
+        "x-auth": "Needs scope `apps:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Apps"
         ],
@@ -4039,7 +4039,7 @@
         "operationId": "rotateApiKey",
         "summary": "Mint a successor key and give this one a deadline",
         "description": "Mint-and-revoke already allowed two live keys. What was missing was the **deadline**: without one the overlap lasted until somebody remembered to revoke, which is why a key that should have been replaced last quarter is still in a CI variable.\n\nThe successor inherits the predecessor's name and scopes; the raw key is returned once and is not retrievable afterwards.\n\n**A live key that names no scopes is refused with 409**, and nothing\nchanges: its successor would inherit the empty list, which is minting\nan unscoped key by another route. Such a key keeps working until it is\nrevoked; replace it by minting a key with the scopes it needs, then revoking\nit.\n\n**Platform-only**, like every other operation on this collection \u2014 a tenant key that could mint its own successor would be a tenant key that never expires. Note this is the *key's* own id in the path, not the tenant's signing key: `/tenants/{tenant_id}/keys/rotate` is a different endpoint entirely, and putting this one under the key id keeps the router and the caller from confusing them.\n\n**Audit:** `api_key.rotated` (warning), carrying the replaced id, its successor's id and the overlap.\n",
-        "x-auth": "auth.require_platform()   // not tenant-scoped",
+        "x-auth": "Platform token only.",
         "tags": [
           "API keys"
         ],
@@ -4124,7 +4124,7 @@
         "operationId": "listResourceServers",
         "summary": "The tenant's audiences and their scopes",
         "description": "Everything a token may be addressed to in this tenant, each with the scopes defined for it, plus the tenant-wide scope names that belong to no audience.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_any_scope_if_restricted([resources:read, resources:write])",
+        "x-auth": "Needs one of the scopes `resources:read` or `resources:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Resources"
         ],
@@ -4171,7 +4171,7 @@
         "operationId": "createResourceServer",
         "summary": "Register an audience",
         "description": "Registers an API that clients may request tokens **for**, with the RFC 8707 `resource` parameter. The `identifier` becomes the `aud` claim. **There is no per-client list**: any client in the tenant may name it, so an API that only some clients may call must check the token's `client_id` claim as well as `aud`. (One exception: a client that registered itself through dynamic registration cannot get a token for an API through `client_credentials`.) Until scopes are defined for it (`POST /api/v1/scopes` with its `resource_server_id`), a token for it carries every scope the client asked for that the client is allowed. After that, it carries only the scopes defined for this API (not tenant-wide ones) plus `openid`, `profile`, `email` and `offline_access`. A request in which none of the scopes survive is refused with `invalid_scope`.\n\n**Not an upsert.** A repeat is a 409, never a silent rebind: changing what an identifier points at would change what every token already carrying it is addressed to.\n\n**Audit:** `resource_server.created` (warning). Whoever can write this table decides what this server will mint tokens for, so the identifier is in the row.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(resources:write)",
+        "x-auth": "Needs scope `resources:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Resources"
         ],
@@ -4224,7 +4224,7 @@
         "operationId": "deleteResourceServer",
         "summary": "Remove an audience",
         "description": "Stops new tokens being addressed to it. Tokens already carrying it keep verifying \u2014 they are signed, and nothing consults this table at verification time \u2014 which is the only thing deletion can honestly promise. Its scope definitions go with it.\n\n**Audit:** `resource_server.deleted` (warning).\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(resources:write)",
+        "x-auth": "Needs scope `resources:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Resources"
         ],
@@ -4278,7 +4278,7 @@
         "operationId": "defineScope",
         "summary": "Give a scope name a meaning",
         "description": "Defines a scope for one audience, or \u2014 with `resource_server_id` omitted \u2014 for the tenant at large.\n\nWhat it buys: the consent screen can show the description instead of the raw string, and a token requested for an audience is narrowed to the scopes that audience defines. Narrowing only: a client cannot reach a scope its own allow-list lacks by naming an API that defines it.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(resources:write)",
+        "x-auth": "Needs scope `resources:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Resources"
         ],
@@ -4334,7 +4334,7 @@
         "operationId": "undefineScope",
         "summary": "Remove a scope definition",
         "description": "The name keeps working as an undefined string on whatever client allow-lists carry it; what goes is its description and its narrowing effect.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(resources:write)",
+        "x-auth": "Needs scope `resources:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Resources"
         ],
@@ -4388,7 +4388,7 @@
         "operationId": "setUsageSoftCap",
         "summary": "Set or clear the monthly-active-user soft cap",
         "description": "**Soft**, and the word is load-bearing: passing this limit is announced, never enforced. Nothing is denied, no login fails, no user notices. A cap that could refuse a sign-in would put a billing table on the authentication path \u2014 the same mistake the recording of these numbers was written to avoid, made deliberately instead of by accident.\n\nWhat happens when a tenant passes it: one `usage.soft_cap_exceeded` audit row (warning) at the crossing, and `over_soft_cap: true` on `GET /api/v1/usage`. Once per crossing, not once per login \u2014 raising the cap re-arms it, which is the behaviour an operator wants.\n\n**Auth:** `tenant:write`, not a new `usage:write`. The *numbers* are recorded by the act of somebody signing in and nothing may write them through an API; a cap is an ordinary tenant setting that changes what gets said, never what gets counted or allowed.\n\n**Audit:** `usage.soft_cap_set` (info) \u2014 because \"why did we stop hearing about this tenant\" should be answerable.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(tenant:write)",
+        "x-auth": "Needs scope `tenant:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Usage"
         ],
@@ -4441,7 +4441,7 @@
         "operationId": "getBilling",
         "summary": "Which plan this tenant is on, and why",
         "description": "The plan in force, where it comes from, and the subscription that pays for it \u2014 what a customer would see on their own billing page, and nothing more. **No billing-provider identifiers**: no customer, subscription, item or price ids. Buying and changing a plan happen in the tenant console (`/admin/billing`), where an owner is signed in; this endpoint only reads.\n\n`plan` is the plan in force. `source` says why: `override` when the platform operator has set one (a comped account, an agreement \u2014 it wins whatever the subscription says), `subscription` when a subscription in force pays for it, `none` when nothing does and the tenant is on FREE.\n\nA subscription is in force while its status is `active`, `trialing` or `past_due` (Stripe is still retrying the card); anything else \u2014 `canceled`, `unpaid`, `incomplete`, `incomplete_expired`, `paused` \u2014 leaves the tenant on FREE. An ended subscription is still returned, with `in_force: false`, so its history is visible.\n\nRead from what the billing webhook last wrote, never from the provider, so it answers the same when billing is switched off for the deployment (`billing_enabled: false`).\n\n**Auth:** `tenant:read`.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(SCOPE_TENANT_READ)   // \"tenant:read\"\n\nNot a new `billing:read`: the plan already rides on every tenant read, and what\nthis adds is why. Nothing here is a credential or a capability.\n",
+        "x-auth": "Needs scope `tenant:read`, when the key has scopes. A key with no scopes may call this.\n\nNot a new `billing:read`: the plan already rides on every tenant read, and what this adds is why. Nothing here is a credential or a capability.",
         "tags": [
           "Tenants"
         ],
@@ -4483,7 +4483,7 @@
         "operationId": "getSessionLifetime",
         "summary": "How long sign-ins last for this tenant",
         "description": "Reports the **configured** value and the **effective** one, which are different questions. `session_ttl_seconds: null` means nobody has set one \u2014 the tenant still has a lifetime, the deployment default. An endpoint that returned only the stored setting would answer \"no session lifetime\" for every tenant that never chose one, which is true of the setting and false of the system.\n\nThe bounds are returned alongside so a caller does not have to carry its own copy of them.\n\n**Auth:** `tenant:read`.\n",
-        "x-auth": "auth.tenant_scope(None)\nauth.require_scope_if_restricted(tenant:read)",
+        "x-auth": "Needs scope `tenant:read`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Tenants"
         ],
@@ -4523,7 +4523,7 @@
         "operationId": "setSessionLifetime",
         "summary": "Set or clear this tenant's session lifetime",
         "description": "Sets how long a sign-in lasts here; `null` restores the deployment default.\n\n**Shortening it signs people out on their next request.** The lifetime is applied when a cookie is verified, not baked into the cookie when it is minted \u2014 so a tenant that shortens the window is answering \"sign everyone out sooner\", and gets that. A TTL carried inside each cookie would let every session already issued run to the old length, which would look like the change worked and would not have.\n\nOut-of-range values are **refused**, not clamped. The same bounds are enforced by the database and again when the value is read, because a value stored some other way must not become a session that outlives the reason it was issued.\n\n**Auth:** `tenant:write`.\n\n**Audit:** `tenant.session_lifetime_set` (info) \u2014 \"why did everyone get logged out on Tuesday\" is otherwise unanswerable, because expired sessions simply stop verifying and leave no event.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(tenant:write)",
+        "x-auth": "Needs scope `tenant:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Tenants"
         ],
@@ -4576,7 +4576,7 @@
         "operationId": "getSmsFactor",
         "summary": "The SMS second factor's switch, whether the plan includes it, and this month's texts",
         "description": "Text-message codes as a second factor: whether the tenant has switched them on, whether its plan includes them (TEAM and BUSINESS do), whether this deployment can send a text at all, and how many it has sent today and this month.\n\nSMS is included in the paid plans and not billed per message, so the counts are here to make the cost visible. `sent_*` counts every text the server handed to the provider; `accepted_this_month` counts the ones the provider took.\n\n`offered` is the answer a person setting it up gets: the switch **and** the plan. A tenant downgraded with the switch on reads `sms_factor_enabled: true` and `offered: false` \u2014 the switch is kept as set, so an upgrade restores it.\n\n**Auth:** `tenant:read`.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(tenant:read)",
+        "x-auth": "Needs scope `tenant:read`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Tenants"
         ],
@@ -4619,7 +4619,7 @@
         "operationId": "setSmsFactor",
         "summary": "Turn the SMS second factor on or off",
         "description": "**On needs a plan that includes SMS** \u2014 TEAM or BUSINESS. The plan is read from the database at the write, not from any cache, so an upgrade applies at the next request and so does a downgrade. A FREE tenant is refused with `403 forbidden` and a message naming the plans that include it. Where plans are not enforced every tenant the operator made may switch it on, and a tenant that self-service sign-up made may only once the operator has set its `plan_override` to TEAM or BUSINESS; until then it is refused with `403 forbidden` and a message that says so.\n\n**Off is always allowed**, on any plan, and removes nobody's factor: it stops new enrolments, and at sign-in withdraws SMS from every account that has another way in while keeping it for the accounts it is the only way into, who are asked to add another factor.\n\nCodes go to US and Canadian numbers only. SMS never satisfies `mfa_policy: \"passkey\"`.\n\n**Auth:** `tenant:write`.\n\n**Audit:** `tenant.mfa_sms_factor_changed` (warning), with the plan the change was judged against.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(tenant:write)",
+        "x-auth": "Needs scope `tenant:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Tenants"
         ],
@@ -4672,7 +4672,7 @@
         "operationId": "createServiceAccount",
         "summary": "Create a non-human principal",
         "description": "A principal a machine client acts as, so that what a machine did is\nattributable to something other than a person's account. Before this endpoint\none could only be made with SQL: nothing else creates them.\n\n**Under `users:write`, not `apps:write`.** This creates a *principal*, and the\nfact that a machine will act as it does not make it a client. An operator who\nmay mint clients but not people should not be able to mint people by calling\nthem robots.\n\n**It cannot become a login.** It is created with no password \u2014 the\nserver's existing \"cannot authenticate by password\" marker \u2014 and the\ndatabase enforces that with a constraint, so the state holds against every\nwriter and not just this endpoint.\n\n**Audit:** `service_account.created` (info), carrying the name.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(users:write)",
+        "x-auth": "Needs scope `users:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Users"
         ],
@@ -4725,7 +4725,7 @@
         "operationId": "checkApp",
         "summary": "Test this app: what its registration will do",
         "description": "Issue #6. Reads the app's registration and says what it will do before a real person finds out. It reports whether the app is switched on; whether a refresh token is issued (and so whether a session outlives an access token); whether `openid` is allowed; for an app that signs people in through the browser, whether `offline_access` is allowed (`@proteles/bff` and the framework SDKs built on it ask for it, and a sign-in asking for a scope the app lacks is refused; a warning for a confidential app, information for a public one, since the native SDKs do not ask for it and a web SDK without a client secret does); its redirect addresses (plain http, an address on the developer's own machine, two that differ only by a trailing slash); whether a post-logout address is registered; and its back-channel logout address, held to the rule it was registered under.\n\n**Read-only, and from the registration alone.** It sends nothing to the app. Whether recent token requests failed to authenticate is not reported, because nothing records a failed client authentication.\n\n`ready` is `false` when any finding's `level` is `problem`. Findings come in a fixed order, and `check` names each one for a script to match on.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(apps:read)",
+        "x-auth": "Needs scope `apps:read`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Apps"
         ],
@@ -4788,7 +4788,7 @@
         "operationId": "setAppServiceAccount",
         "summary": "Bind a client to a principal, or clear the binding",
         "description": "Separate from creating the client, so an existing deployment can adopt a\nprincipal without re-registering. Re-registering changes the `client_id` and\nforces every consumer to be reconfigured at one moment \u2014 the same outage that\nmade `/rotate-secret` worth building.\n\n**PUT, and the body is the whole state.** An absent or `null`\n`service_account_id` UNBINDS; there is no separate DELETE, and `{}` clears the\nbinding. A body is required, though: none at all is a 400. Sending the same id twice is a no-op rather than an error.\n\n**One answer for two failures.** \"No such client here\" and \"that id is not a\nservice account of this tenant\" both return the same 400. They are both the\ncaller naming something that is not theirs, and telling them apart would\nconfirm which ids exist.\n\n**Audit:** `app.service_account_changed` (warning), carrying the client and\nthe principal \u2014 or its absence, so an unbind is as visible as a bind.\n",
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(apps:write)",
+        "x-auth": "Needs scope `apps:write`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Apps"
         ],
@@ -4965,7 +4965,7 @@
           "Users"
         ],
         "security": [],
-        "x-auth": "auth.tenant_scope(req.tenant_id)\nauth.require_scope_if_restricted(SCOPE_USERS_WRITE)   // \"users:write\"\n\nThe same authority as POST /api/v1/users, because this mints an account that\ncan sign in. Which door it came through is not a difference in authority.\n",
+        "x-auth": "Needs scope `users:write`, when the key has scopes. A key with no scopes may call this.\n\nThe same authority as POST /api/v1/users, because this mints an account that can sign in. Which door it came through is not a difference in authority.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5183,7 +5183,7 @@
         "operationId": "listSamlConnections",
         "summary": "The tenant's SAML connections",
         "description": "Every inbound SAML connection configured for this tenant, enabled or not.\n\nA connection is the trust anchor for federated sign-in: it names the identity\nprovider, where its sign-on endpoint is, and the certificate whose signature will\nbe accepted.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_READ)    // \"saml:read\" \u2014 STRICT\n\nStrict, like the mail pair and for a sharper reason. A SAML connection is the\ntrust anchor for a tenant's whole workforce: whoever can write one can point\nfederated sign-in at an identity provider they control and then sign in as\nanybody in that tenant. The read side is strict too, because the row names the\nprovider, its endpoint and the certificate trusted \u2014 a map of how to impersonate\nthem convincingly.\n\nA key holding saml:write is NOT thereby able to read, matching the mail pair.\n",
+        "x-auth": "Needs scope `saml:read`. A key with no scopes is refused.\n\nStrict, like the mail pair and for a sharper reason. A SAML connection is the trust anchor for a tenant's whole workforce: whoever can write one can point federated sign-in at an identity provider they control and then sign in as anybody in that tenant. The read side is strict too, because the row names the provider, its endpoint and the certificate trusted \u2014 a map of how to impersonate them convincingly.\n\nA key holding saml:write is NOT thereby able to read, matching the mail pair.",
         "tags": [
           "SAML"
         ],
@@ -5223,7 +5223,7 @@
         "operationId": "createSamlConnection",
         "summary": "Configure a SAML connection",
         "description": "Registers an identity provider this tenant's users may sign in through.\n\nThe certificate is checked here rather than at sign-in, with the same loader\nverification uses: a PEM that cannot be loaded, a sign-on URL that is not https,\na lifetime outside the permitted range, or an `acs_url` that is not an address this server answers on, is refused with 400 while the operator\nis still looking at the form, rather than as a broken login afterwards.\n\nA connection is disabled unless `enabled` says otherwise, and the platform's\nper-tenant switch (`PUT /api/v1/tenants/{tenant_id}/saml`) must be on as well\nbefore either sign-in route answers.\n\nA connection may never trust this server's own identity provider: an\n`idp_entity_id` on this deployment's names, or a certificate carrying a key this\ndeployment has published as an identity provider \u2014 any tenant's, including one\ndeleted after the key was recorded, and whatever name the certificate carries \u2014\nis refused with 400. A connection written some other way is refused at sign-in\nfor the same reasons.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_WRITE)   // \"saml:write\" \u2014 STRICT\n\nSee the note on saml:read.\n",
+        "x-auth": "Needs scope `saml:write`. A key with no scopes is refused.\n\nSee the note on saml:read.",
         "tags": [
           "SAML"
         ],
@@ -5276,7 +5276,7 @@
         "operationId": "getSamlConnection",
         "summary": "One SAML connection",
         "description": "The connection's full configuration, including the certificates it trusts.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_READ)    // \"saml:read\" \u2014 STRICT\n\nStrict, like the mail pair and for a sharper reason. A SAML connection is the\ntrust anchor for a tenant's whole workforce: whoever can write one can point\nfederated sign-in at an identity provider they control and then sign in as\nanybody in that tenant. The read side is strict too, because the row names the\nprovider, its endpoint and the certificate trusted \u2014 a map of how to impersonate\nthem convincingly.\n\nA key holding saml:write is NOT thereby able to read, matching the mail pair.\n",
+        "x-auth": "Needs scope `saml:read`. A key with no scopes is refused.\n\nStrict, like the mail pair and for a sharper reason. A SAML connection is the trust anchor for a tenant's whole workforce: whoever can write one can point federated sign-in at an identity provider they control and then sign in as anybody in that tenant. The read side is strict too, because the row names the provider, its endpoint and the certificate trusted \u2014 a map of how to impersonate them convincingly.\n\nA key holding saml:write is NOT thereby able to read, matching the mail pair.",
         "tags": [
           "SAML"
         ],
@@ -5329,7 +5329,7 @@
         "operationId": "replaceSamlConnection",
         "summary": "Replace a SAML connection",
         "description": "Replaces the whole configuration. There is no partial update: every field is\nneeded for a connection to be usable, and a half-applied trust configuration \u2014 a\nnew certificate under the old entity id, say \u2014 is a state nobody should be able\nto leave one in.\n\nEverything creation refuses is refused here too, including a connection that would trust this server's own identity provider.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_WRITE)   // \"saml:write\" \u2014 STRICT\n\nSee the note on saml:read.\n",
+        "x-auth": "Needs scope `saml:write`. A key with no scopes is refused.\n\nSee the note on saml:read.",
         "tags": [
           "SAML"
         ],
@@ -5395,7 +5395,7 @@
         "operationId": "deleteSamlConnection",
         "summary": "Remove a SAML connection",
         "description": "Sign-in through that identity provider stops working immediately. Sessions\nalready established are unaffected \u2014 they are sessions, not assertions.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_WRITE)   // \"saml:write\" \u2014 STRICT\n\nSee the note on saml:read.\n",
+        "x-auth": "Needs scope `saml:write`. A key with no scopes is refused.\n\nSee the note on saml:read.",
         "tags": [
           "SAML"
         ],
@@ -5451,7 +5451,7 @@
         "operationId": "getTenantSaml",
         "summary": "May this tenant sign in with SAML, as a service provider?",
         "description": "The platform's per-tenant switch for SAML phase 1: this tenant signing its people in through their own identity provider. Acting as an identity provider is a separate switch, `GET /api/v1/tenants/{tenant_id}/saml-idp`.\n\nSeparate from the `enabled` on each of the tenant's connections: this one is the operator saying \"this customer may use SAML\", and that one is the customer saying \"this provider is live\". Both must be on before a sign-in is possible.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform token only, and there is deliberately NO scope that grants it. The\nswitch exists because an operator decides who may reach a surface they have not\nfinished reviewing; a tenant able to answer that for themselves would not be the\nswitch that was asked for.\n",
+        "x-auth": "Platform token only, and there is deliberately NO scope that grants it. The switch exists because an operator decides who may reach a surface they have not finished reviewing; a tenant able to answer that for themselves would not be the switch that was asked for.",
         "tags": [
           "SAML"
         ],
@@ -5486,7 +5486,7 @@
         "operationId": "setTenantSaml",
         "summary": "Turn SAML sign-in (phase 1) on or off for a tenant",
         "description": "Takes effect on the next request: the flag is read on every SAML sign-in request, before any XML is parsed, so a tenant switched off stops being able to start or finish a sign-in immediately. Sessions already established are untouched \u2014 they are sessions, not assertions.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform token only, and there is deliberately NO scope that grants it. The\nswitch exists because an operator decides who may reach a surface they have not\nfinished reviewing; a tenant able to answer that for themselves would not be the\nswitch that was asked for.\n",
+        "x-auth": "Platform token only, and there is deliberately NO scope that grants it. The switch exists because an operator decides who may reach a surface they have not finished reviewing; a tenant able to answer that for themselves would not be the switch that was asked for.",
         "tags": [
           "SAML"
         ],
@@ -5547,7 +5547,7 @@
         "operationId": "getTenantSamlIdp",
         "summary": "May this tenant act as a SAML identity provider?",
         "description": "The platform's per-tenant switch for SAML phase 2: whether this tenant may sign assertions for its registered service providers and publish IdP metadata.\n\nDeliberately separate from `GET /api/v1/tenants/{tenant_id}/saml`, which is phase 1 (consuming assertions). Allowing one never allows the other.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform token only, and there is deliberately NO scope that grants it. Phase 2\nis a surface where this server signs statements about a tenant's people for\nthird parties to accept; the operator decides who may reach it, and a tenant\nable to answer that for themselves would not be the switch that was asked for.\n",
+        "x-auth": "Platform token only, and there is deliberately NO scope that grants it. Phase 2 is a surface where this server signs statements about a tenant's people for third parties to accept; the operator decides who may reach it, and a tenant able to answer that for themselves would not be the switch that was asked for.",
         "tags": [
           "SAML"
         ],
@@ -5582,7 +5582,7 @@
         "operationId": "setTenantSamlIdp",
         "summary": "Turn the SAML identity provider on or off for a tenant",
         "description": "Takes effect on the next request: the tenant's IdP metadata stops being served and no signing key is minted for it, including the replacement a revocation would otherwise mint. Listing, promoting and revoking keys stay available, so a compromised key can still be dealt with, and keys already minted are kept, so turning it back on does not change a certificate a service provider pinned. A change is audited as `tenant.saml_idp_enabled` at warning severity.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform token only, and there is deliberately NO scope that grants it. Phase 2\nis a surface where this server signs statements about a tenant's people for\nthird parties to accept; the operator decides who may reach it, and a tenant\nable to answer that for themselves would not be the switch that was asked for.\n",
+        "x-auth": "Platform token only, and there is deliberately NO scope that grants it. Phase 2 is a surface where this server signs statements about a tenant's people for third parties to accept; the operator decides who may reach it, and a tenant able to answer that for themselves would not be the switch that was asked for.",
         "tags": [
           "SAML"
         ],
@@ -5635,7 +5635,7 @@
         "operationId": "listSamlServiceProviders",
         "summary": "The tenant's SAML service providers",
         "description": "Every application this tenant may sign users into with Proteles as the identity provider, enabled or not.\n\nThe acs_urls of each are the allowlist an assertion may be delivered to.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_READ)    // \"saml-sp:read\" \u2014 STRICT\n\nStrict, and a different pair from saml:read/saml:write on purpose. Those govern\nwhich identity provider a tenant trusts to vouch for its staff; these govern\nwhich applications this tenant hands a signed assertion about them to. The read\nside is strict because the row answers \"where would an assertion about my staff\nbe delivered\" \u2014 which is the question an administrator audits, and the one an\nattacker would most like answered.\n",
+        "x-auth": "Needs scope `saml-sp:read`. A key with no scopes is refused.\n\nStrict, and a different pair from saml:read/saml:write on purpose. Those govern which identity provider a tenant trusts to vouch for its staff; these govern which applications this tenant hands a signed assertion about them to. The read side is strict because the row answers \"where would an assertion about my staff be delivered\" \u2014 which is the question an administrator audits, and the one an attacker would most like answered.",
         "tags": [
           "SAML"
         ],
@@ -5675,7 +5675,7 @@
         "operationId": "createSamlServiceProvider",
         "summary": "Register a service provider",
         "description": "Registers an application this tenant may sign users into.\n\nRefuses, with a 400 and a sentence, every configuration that could never work or could not be delivered safely: an entity id that is not an absolute URI or carries surrounding whitespace, an ACS URL that is not https, contains userinfo, a fragment, a query, a dot segment, a percent-encoded separator, a backslash or whitespace, does not survive its own parser, or looks like a pattern; a `default_acs_url` that is not one of `acs_urls`, or is missing when `acs_urls` names more than one destination; and an entity id or ACS URL on any name this server answers to \u2014 its issuer, any configured base host or tenant host beneath one, or any tenant's verified custom domain. A registration naming a domain verified later is kept, but nothing is delivered to it: delivery asks about every name again. 409 when this tenant already registered that entity id.\n\nRefused with a 403 while the platform operator has not enabled this tenant as a SAML identity provider, or the tenant is not active (`PUT /api/v1/tenants/{tenant_id}/saml-idp`). The body is checked first, so a malformed one is told what is wrong with it either way.",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nWhoever can write a registration chooses where a signed assertion about any user\nof this tenant is delivered. The acs_urls allowlist is the only thing standing\nbetween a signed statement of identity and an endpoint the attacker controls, so\nno unscoped key inherits this.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nWhoever can write a registration chooses where a signed assertion about any user of this tenant is delivered. The acs_urls allowlist is the only thing standing between a signed statement of identity and an endpoint the attacker controls, so no unscoped key inherits this.",
         "tags": [
           "SAML"
         ],
@@ -5728,7 +5728,7 @@
         "operationId": "getSamlServiceProvider",
         "summary": "One service provider",
         "description": "One registration, by id, within this tenant. A registration id from another tenant answers 404.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_READ)    // \"saml-sp:read\" \u2014 STRICT\n\nStrict, and a different pair from saml:read/saml:write on purpose. Those govern\nwhich identity provider a tenant trusts to vouch for its staff; these govern\nwhich applications this tenant hands a signed assertion about them to. The read\nside is strict because the row answers \"where would an assertion about my staff\nbe delivered\" \u2014 which is the question an administrator audits, and the one an\nattacker would most like answered.\n",
+        "x-auth": "Needs scope `saml-sp:read`. A key with no scopes is refused.\n\nStrict, and a different pair from saml:read/saml:write on purpose. Those govern which identity provider a tenant trusts to vouch for its staff; these govern which applications this tenant hands a signed assertion about them to. The read side is strict because the row answers \"where would an assertion about my staff be delivered\" \u2014 which is the question an administrator audits, and the one an attacker would most like answered.",
         "tags": [
           "SAML"
         ],
@@ -5781,7 +5781,7 @@
         "operationId": "replaceSamlServiceProvider",
         "summary": "Replace a service provider",
         "description": "Whole replacement. There is no partial update: a partial update of an allowlist is a way to add a destination without stating the whole set you meant to allow. Everything creation refuses is refused here too.\n\n`sp_entity_id` and `name_id_format` must be the registration's own; an omitted `name_id_format` means `persistent`, as it does on creation. Refused with a 403 while this tenant is not enabled as a SAML identity provider, as creation is. The audit row records what changed, with the ACS URLs, the default and the request-signing certificate's fingerprint before and after, and which credential made the change \u2014 the platform token, or the tenant API key by id.",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nWhoever can write a registration chooses where a signed assertion about any user\nof this tenant is delivered. The acs_urls allowlist is the only thing standing\nbetween a signed statement of identity and an endpoint the attacker controls, so\nno unscoped key inherits this.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nWhoever can write a registration chooses where a signed assertion about any user of this tenant is delivered. The acs_urls allowlist is the only thing standing between a signed statement of identity and an endpoint the attacker controls, so no unscoped key inherits this.",
         "tags": [
           "SAML"
         ],
@@ -5847,7 +5847,7 @@
         "operationId": "deleteSamlServiceProvider",
         "summary": "Delete a service provider",
         "description": "Deletes the registration. Assertions already delivered are not recalled, and any session the SP minted from one is the SP's to end. Allowed while the tenant is not enabled as an identity provider, so switching the surface off never traps what is on it. The audit row keeps the entity id, ACS URLs and default the registration had, and names the credential that deleted it.",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nWhoever can write a registration chooses where a signed assertion about any user\nof this tenant is delivered. The acs_urls allowlist is the only thing standing\nbetween a signed statement of identity and an endpoint the attacker controls, so\nno unscoped key inherits this.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nWhoever can write a registration chooses where a signed assertion about any user of this tenant is delivered. The acs_urls allowlist is the only thing standing between a signed statement of identity and an endpoint the attacker controls, so no unscoped key inherits this.",
         "tags": [
           "SAML"
         ],
@@ -5895,7 +5895,7 @@
         "operationId": "listSamlServiceProviderAssignments",
         "summary": "Who may reach this service provider",
         "description": "The registration's assigned users, oldest grant first, with `open_to_every_tenant_user` beside them. The flag travels with the list because an empty array means \"nobody\" only when the flag is false; when it is true the list is not consulted at all.\n\nThe whole set, not a page: \"who may reach this application\" is not a question with a second page, and a registration may not have more than 1000 people assigned individually \u2014 one meant for everybody uses the flag.",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_READ)    // \"saml-sp:read\" \u2014 STRICT\n\nStrict, and a different pair from saml:read/saml:write on purpose. Those govern\nwhich identity provider a tenant trusts to vouch for its staff; these govern\nwhich applications this tenant hands a signed assertion about them to. The read\nside is strict because the row answers \"where would an assertion about my staff\nbe delivered\" \u2014 which is the question an administrator audits, and the one an\nattacker would most like answered.\n",
+        "x-auth": "Needs scope `saml-sp:read`. A key with no scopes is refused.\n\nStrict, and a different pair from saml:read/saml:write on purpose. Those govern which identity provider a tenant trusts to vouch for its staff; these govern which applications this tenant hands a signed assertion about them to. The read side is strict because the row answers \"where would an assertion about my staff be delivered\" \u2014 which is the question an administrator audits, and the one an attacker would most like answered.",
         "tags": [
           "SAML"
         ],
@@ -5950,7 +5950,7 @@
         "operationId": "assignSamlServiceProviderUser",
         "summary": "Let one person reach this service provider",
         "description": "Idempotent: assigning somebody already assigned answers with the grant they already had and does not move its `created_at`, because the trail answers \"since when\" and saying it twice did not make it later. No body \u2014 the pair is the path.\n\nOne person per call rather than a whole-set replacement, unlike `acs_urls`. A partial update of an allowlist of *destinations* leaves a state nobody stated; a set of *people* has no such state, and the lost-update race a whole-set PUT introduces is the more expensive failure, because what it silently keeps is somebody's access.\n\nRefused with a 403 while this tenant is not enabled as a SAML identity provider, as creating a registration is. A 404 means no such registration, or no such user in this tenant \u2014 the two are answered identically, because a caller guessing at identifiers should learn nothing from which one it got wrong. A 409 means the registration is at its ceiling of individually assigned users.",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nWhoever can write a registration chooses where a signed assertion about any user\nof this tenant is delivered. The acs_urls allowlist is the only thing standing\nbetween a signed statement of identity and an endpoint the attacker controls, so\nno unscoped key inherits this.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nWhoever can write a registration chooses where a signed assertion about any user of this tenant is delivered. The acs_urls allowlist is the only thing standing between a signed statement of identity and an endpoint the attacker controls, so no unscoped key inherits this.",
         "tags": [
           "SAML"
         ],
@@ -6016,7 +6016,7 @@
         "operationId": "unassignSamlServiceProviderUser",
         "summary": "Stop one person reaching this service provider",
         "description": "The offboarding call, and one statement \u2014 so two administrators removing two different people cannot lose one of the two removals to a lost update.\n\n204 whether or not they were assigned: the caller asked for this person not to be assigned, and afterwards they are not, so an offboarding script that runs twice does not fail the second time. Only a removal that removed something is written to the audit trail.\n\n**Allowed even while the tenant is not enabled as an identity provider**, unlike the grant above and like `deleteSamlServiceProvider`: taking access away is the call an administrator makes after turning SAML off.",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nWhoever can write a registration chooses where a signed assertion about any user\nof this tenant is delivered. The acs_urls allowlist is the only thing standing\nbetween a signed statement of identity and an endpoint the attacker controls, so\nno unscoped key inherits this.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nWhoever can write a registration chooses where a signed assertion about any user of this tenant is delivered. The acs_urls allowlist is the only thing standing between a signed statement of identity and an endpoint the attacker controls, so no unscoped key inherits this.",
         "tags": [
           "SAML"
         ],
@@ -6074,7 +6074,7 @@
         "operationId": "listSamlIdpKeys",
         "summary": "The tenant's SAML signing keys",
         "description": "Every key this tenant has, revoked ones included, newest first.\n\nDeliberately not the same list the metadata document publishes: that one drops revoked keys, and a management list that did the same could not confirm the revocation it was opened to confirm.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope_if_restricted(SCOPE_TENANT_READ)    // \"tenant:read\"\n\nLenient, because everything in the response is public: the certificates are\nserved unauthenticated at the metadata endpoint, and an administrator cannot\noperate a rotation without seeing which key is in which state. The private\nhalf is never in any response body.\n",
+        "x-auth": "Needs scope `tenant:read`, when the key has scopes. A key with no scopes may call this.\n\nLenient, because everything in the response is public: the certificates are served unauthenticated at the metadata endpoint, and an administrator cannot operate a rotation without seeing which key is in which state. The private half is never in any response body.",
         "tags": [
           "SAML"
         ],
@@ -6114,7 +6114,7 @@
         "operationId": "mintSamlIdpKey",
         "summary": "Mint a signing key, published and signing nothing",
         "description": "Phase one of a three-phase rotation. The new certificate appears in this tenant's metadata alongside the current one and signs nothing; two signing KeyDescriptors are the only in-band way a service provider learns a second key is coming.\n\nThere is no request body. Key material is never accepted from a caller \u2014 an endpoint that took a PEM would be a key-substitution attack reachable from a phishing link sent to a tenant administrator. Nothing is minted for a tenant that has not asked, so a customer who never wanted SAML never acquires a compromise surface or a rotation obligation.\n\nRefused with `403` unless the platform has enabled the tenant as a SAML identity provider (`PUT /api/v1/tenants/{tenant_id}/saml-idp`) and the tenant is active: nothing is minted for a tenant that may not use it.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nRevoking or replacing the key every service provider pinned takes the\ntenant's outbound SAML down until each one re-pins, so no unscoped key\ninherits this. It was tenant:write,\nlenient, after rotate_signing_key next door. No key material is accepted\nfrom the caller on any of these, so the key-substitution attack signing\nkey 39 names is not reachable even with the scope.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nRevoking or replacing the key every service provider pinned takes the tenant's outbound SAML down until each one re-pins, so no unscoped key inherits this. It was tenant:write, lenient, after rotate_signing_key next door. No key material is accepted from the caller on any of these, so the key-substitution attack signing key 39 names is not reachable even with the scope.",
         "tags": [
           "SAML"
         ],
@@ -6159,7 +6159,7 @@
         "operationId": "promoteSamlIdpKey",
         "summary": "Start signing with a published key",
         "description": "Phase two. The incumbent retires in the same transaction and keeps being published for the overlap, so an assertion minted a second before this call still verifies at a service provider that has not refetched.\n\nWhen another key is signing, the key being promoted must itself have been published for the whole overlap first (`SAML_IDP_ROTATION_OVERLAP_DAYS`) \u2014 or, when that can no longer finish before the signing key is refused, for the longest time a service provider may cache the metadata document. A tenant's first key replaces nothing and waits for nothing, and neither does a key replacing one the signer already refuses.\n\nRefuses with 409 while the previous rotation's overlap is still open, naming the date it closes. Rotating twice inside the overlap retires a key service providers have only just started trusting and strands them on a certificate that now signs nothing \u2014 and running it again is exactly what an operator does when a rotation 'did not seem to work'. If the key is compromised, revoke it instead; that is a different verb rather than a flag on this one.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nRevoking or replacing the key every service provider pinned takes the\ntenant's outbound SAML down until each one re-pins, so no unscoped key\ninherits this. It was tenant:write,\nlenient, after rotate_signing_key next door. No key material is accepted\nfrom the caller on any of these, so the key-substitution attack signing\nkey 39 names is not reachable even with the scope.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nRevoking or replacing the key every service provider pinned takes the tenant's outbound SAML down until each one re-pins, so no unscoped key inherits this. It was tenant:write, lenient, after rotate_signing_key next door. No key material is accepted from the caller on any of these, so the key-substitution attack signing key 39 names is not reachable even with the scope.",
         "tags": [
           "SAML"
         ],
@@ -6216,7 +6216,7 @@
         "operationId": "revokeSamlIdpKey",
         "summary": "Revoke a compromised key, with no overlap",
         "description": "The opposite operation to a rotation. The key leaves published metadata immediately, is never publishable or promotable again, and \u2014 if it was the one signing, and the tenant is still enabled as an identity provider and active \u2014 a replacement is minted and promoted in its place so the tenant can still sign. A tenant the platform has switched off keeps no signing key and gets `replacement: null`.\n\nOverlap is what makes a planned rotation safe and is exactly what must not happen here: every second a compromised certificate stays in metadata is a second an attacker holding the key mints assertions every service provider accepts.\n\nRevoking a key that is already revoked reports success with a null replacement rather than an error; the caller wanted a state and they have it.\n",
-        "x-auth": "auth.tenant_scope(...)\nauth.require_scope(SCOPE_SAML_SP_WRITE)    // \"saml-sp:write\" \u2014 STRICT\n\nRevoking or replacing the key every service provider pinned takes the\ntenant's outbound SAML down until each one re-pins, so no unscoped key\ninherits this. It was tenant:write,\nlenient, after rotate_signing_key next door. No key material is accepted\nfrom the caller on any of these, so the key-substitution attack signing\nkey 39 names is not reachable even with the scope.\n",
+        "x-auth": "Needs scope `saml-sp:write`. A key with no scopes is refused.\n\nRevoking or replacing the key every service provider pinned takes the tenant's outbound SAML down until each one re-pins, so no unscoped key inherits this. It was tenant:write, lenient, after rotate_signing_key next door. No key material is accepted from the caller on any of these, so the key-substitution attack signing key 39 names is not reachable even with the scope.",
         "tags": [
           "SAML"
         ],
@@ -6270,7 +6270,7 @@
         "operationId": "listPlanVersions",
         "summary": "Every version of every plan, drafts included",
         "description": "The catalog editor's list. Each version's terms, prices and pricing-page copy; whether it is its tier's **current** version (the one new sign-ups and plan changes get); how many tenants hold it; and the billing provider's price ids recorded for it. A published version never changes, and a tenant keeps the version it bought until it changes plan.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.\n",
+        "x-auth": "Platform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.",
         "security": [
           {
             "bearerAuth": []
@@ -6302,7 +6302,7 @@
         "operationId": "createPlanDraft",
         "summary": "Start a draft of a plan's next version",
         "description": "A copy of the tier's current version, numbered next, to edit and then publish. One draft per tier. Audited on the platform tenant as `plan.version_drafted`.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.\n",
+        "x-auth": "Platform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.",
         "security": [
           {
             "bearerAuth": []
@@ -6366,7 +6366,7 @@
         "operationId": "updatePlanDraft",
         "summary": "Replace a draft's terms, prices and copy",
         "description": "Every field, every time: the editor's form is the whole draft. Refused with the field named wherever `plan_versions`' CHECKs would refuse it \u2014 at least three days of logs, every choice list including one day, FREE costing nothing. A published version never changes.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.\n",
+        "x-auth": "Platform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.",
         "security": [
           {
             "bearerAuth": []
@@ -6450,7 +6450,7 @@
         "operationId": "discardPlanDraft",
         "summary": "Throw a draft away",
         "description": "Audited on the platform tenant as `plan.version_discarded`. A published version is never removed: tenants hold it.\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.\n",
+        "x-auth": "Platform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.",
         "security": [
           {
             "bearerAuth": []
@@ -6509,7 +6509,7 @@
         "operationId": "publishPlanVersion",
         "summary": "Publish a draft",
         "description": "From now on new sign-ups and plan changes get this version; nobody who holds an earlier one is moved. Where billing is set up and the tier is paid, the version's prices are made at the provider first \u2014 a new base price per interval, seat and overage prices reused when their amounts did not change \u2014 and published with it in one transaction. If the provider refuses, nothing is published. Audited on the platform tenant as `plan.version_published` (warning).\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.\n",
+        "x-auth": "Platform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.",
         "security": [
           {
             "bearerAuth": []
@@ -6595,7 +6595,7 @@
         "operationId": "moveFreeWorkspaces",
         "summary": "Move every Free workspace onto this version",
         "description": "Moves every workspace holding another FREE version, as its subscription or its override, onto this published FREE version, and answers how many moved. The one exception to the rule that a workspace keeps the version it bought, and only for FREE: publishing a FREE version changes nothing for existing workspaces until this is asked for. FREE costs nothing, so no subscription follows; a paid tier always keeps the version that was bought. Starts no deletion grace. Audited on the platform tenant as `plan.free_workspaces_moved` (warning).\n",
-        "x-auth": "auth.require_platform()\n\nPlatform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.\n",
+        "x-auth": "Platform only: the catalog is what the product sells every tenant, and one tenant's key deciding it would be deciding for all of them.",
         "security": [
           {
             "bearerAuth": []
@@ -6656,12 +6656,290 @@
         }
       }
     },
+      "/api/v1/licenses": {
+        "get": {
+          "operationId": "listLicenses",
+          "summary": "List every perpetual license",
+          "description": "Every perpetual license, revoked ones too, newest first, with the tenants under each now. A license is a plan held forever without billing — no checkout, subscription, invoice or meter — for one of the operator's own applications (migration 0209). It keeps the plan version it was granted at, always; every limit of that version is lifted (recurring users, seats, applications, social logins, the log window and its purge, session-lifetime choices) and every feature is that version's (SAML, SMS, machine identity).\n",
+          "x-auth": "Platform only: a license is a plan nobody pays for, so a tenant key granting one — even to its own tenant — would be a tenant setting its own price to zero.",
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Every license.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PlanLicenseList"
+                  }
+                }
+              }
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorized"
+            },
+            "403": {
+              "$ref": "#/components/responses/Forbidden"
+            },
+            "429": {
+              "$ref": "#/components/responses/RateLimited"
+            }
+          }
+        },
+        "post": {
+          "operationId": "grantLicense",
+          "summary": "Grant a perpetual license",
+          "description": "Records a license for an application at the named plan's **current** version and puts every tenant named on it: each one's override becomes that version, which it then keeps whatever is published later, with its link to the license beside it. All or nothing. Audited as `plan.license_granted` (warning) on each tenant's trail and on the platform tenant's. While a tenant holds a license, the plain override (`PATCH /api/v1/tenants/{tenant_id}` with `plan_override`) is refused, the billing webhook and job leave it alone, and moving FREE workspaces onto a new version does not move it.\n",
+          "x-auth": "Platform only: a license is a plan nobody pays for, so a tenant key granting one — even to its own tenant — would be a tenant setting its own price to zero.",
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseGrantRequest"
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "The license, with its tenants.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PlanLicense"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "`invalid_request` — an application name that is blank, too long or holds a line break; a note too long; not one of the three plans; no tenant, or more than 100; the platform's own tenant, which no plan limits; or an unreadable body.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorized"
+            },
+            "403": {
+              "$ref": "#/components/responses/Forbidden"
+            },
+            "429": {
+              "$ref": "#/components/responses/RateLimited"
+            },
+            "404": {
+              "description": "`not_found` — a tenant named does not exist. Nothing was granted.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "`conflict` — a tenant named already holds a license (revoke it first: a different version is a new license), or has a subscription that can still change (a license is never billed, so cancel the subscription first). Nothing was granted.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/licenses/{id}/tenants": {
+        "post": {
+          "operationId": "addLicenseTenant",
+          "summary": "Put one more tenant on a license",
+          "description": "Puts a tenant on an existing license at the license's own version — not the tier's current one, whatever has been published since. Refused for the reasons a grant is, and for a revoked license. Audited as `plan.license_granted` on the tenant's trail and the platform tenant's.\n",
+          "x-auth": "Platform only: a license is a plan nobody pays for, so a tenant key granting one — even to its own tenant — would be a tenant setting its own price to zero.",
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "required": true,
+              "description": "The license's id (`plan_licenses.id`).",
+              "schema": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseAddTenantRequest"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "The license, with its tenants.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PlanLicense"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "`invalid_request` — the platform's own tenant, or an unreadable body.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorized"
+            },
+            "403": {
+              "$ref": "#/components/responses/Forbidden"
+            },
+            "429": {
+              "$ref": "#/components/responses/RateLimited"
+            },
+            "404": {
+              "description": "`not_found` — no such license, or no such tenant.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "`conflict` — the license is revoked (a revocation is final), or the tenant holds a license already or has a subscription that can still change.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/licenses/{id}/revoke": {
+        "post": {
+          "operationId": "revokeLicense",
+          "summary": "Revoke a perpetual license",
+          "description": "Ends a license for every tenant under it. Each tenant's override and link are cleared, so its subscription decides its plan again — FREE when it has none — with the week's deletion grace a downgrade gets, and its owners are mailed what the change switched off, as for any plan change. The reason is required and recorded on the license and in `plan.license_revoked` (warning) on each tenant's trail and the platform tenant's. A revocation is final: a revoked license is kept, listed, and never granted again.\n",
+          "x-auth": "Platform only: a license is a plan nobody pays for, so a tenant key granting one — even to its own tenant — would be a tenant setting its own price to zero.",
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "required": true,
+              "description": "The license's id (`plan_licenses.id`).",
+              "schema": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseRevokeRequest"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "The license, revoked, with no tenants under it.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PlanLicense"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "`invalid_request` — no reason, a blank one or one too long, or an unreadable body.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorized"
+            },
+            "403": {
+              "$ref": "#/components/responses/Forbidden"
+            },
+            "429": {
+              "$ref": "#/components/responses/RateLimited"
+            },
+            "404": {
+              "description": "`not_found` — no such license.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "`conflict` — the license is already revoked.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ManagementApiError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
     "/api/v1/plan": {
       "get": {
         "operationId": "getPlan",
         "summary": "The plan in force and what it includes",
         "description": "The tenant's plan \u2014 FREE, TEAM or BUSINESS \u2014 who decided it, and the entitlements **applied** to it as numbers, read from the server's own table so a client never keeps a copy of the pricing.\n\n**Applied, not sold.** `enforced` says whether this tenant is held to its plan, and `plan_binding` why not when it is not: `not_enforced`, the deployment does not enforce plans (`PLANS_ENFORCED`), or `platform_tenant`, the default tenant, which no plan limits. Where it is not \u2014 every tenant of a self-hosted deployment, which leaves plans off by default, and the platform's own tenant everywhere \u2014 the tenant gets the unrestricted set whatever `plan` says: `null` for the MRU allowance, the seats and the log window, any session lifetime in range, SMS allowed — except to a tenant that self-service sign-up made, whose `sms` follows its plan either way (FREE has none; the operator grants it with `plan_override`).\n\n**Auth:** `tenant:read`.\n",
-        "x-auth": "auth.tenant_scope(q.tenant_id)\nauth.require_scope_if_restricted(tenant:read)",
+        "x-auth": "Needs scope `tenant:read`, when the key has scopes. A key with no scopes may call this.",
         "tags": [
           "Tenants"
         ],
@@ -8394,6 +8672,7 @@
           "plan",
           "plan_subscribed",
           "plan_override",
+          "license_id",
           "plans_enforced",
           "plan_binding",
           "seat_cap"
@@ -8543,7 +8822,15 @@
               "business",
               null
             ],
-            "description": "The operator's override, or `null`. When set it is the plan in force."
+            "description": "The operator's override, or `null`. When set it is the plan in force \u2014 a courtesy comp, or a perpetual license's (`license_id`)."
+          },
+          "license_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The perpetual license the override is, when it is one (`GET /api/v1/licenses`); `null` for a comp and for no override. The field that tells the two apart, so neither is cleaned up for the other. While set, `plan_override` cannot be changed here: revoke the license first."
           },
           "seat_cap": {
             "type": [
@@ -8554,16 +8841,17 @@
           },
           "plans_enforced": {
             "type": "boolean",
-            "description": "Whether this tenant is held to its plan: the deployment enforces plans (`PLANS_ENFORCED`) and the tenant is not the platform's own (the default tenant, which no plan limits). `false`: the plan is recorded and shown, and limits nothing. `plan_binding` says which of the two it is."
+            "description": "Whether this tenant is held to its plan: the deployment enforces plans (`PLANS_ENFORCED`), the tenant is not the platform's own (the default tenant, which no plan limits), and it holds no perpetual license. `false`: the plan is recorded and shown, and limits nothing \u2014 for a licensed tenant, nothing it counts; its features are still the plan's. `plan_binding` says which it is."
           },
           "plan_binding": {
             "type": "string",
             "enum": [
               "plan",
               "not_enforced",
-              "platform_tenant"
+              "platform_tenant",
+              "licensed"
             ],
-            "description": "Why the plan does or does not bind this tenant, in `plan::binding`'s order: `not_enforced` \u2014 the deployment does not enforce plans (`PLANS_ENFORCED` is off), checked first, for every tenant including the default one; `platform_tenant` \u2014 plans are enforced, and this is the platform's own (default) tenant, which no plan limits; `plan` \u2014 held to its plan. `not_enforced` and `platform_tenant` are the two reasons `plans_enforced` is false, and the only way to tell them apart: on the default tenant the boolean is false either way, so this is how an operator whose one tenant is the default reads whether `PLANS_ENFORCED` is on. Absent from a server before 2026-10-03."
+            "description": "Why the plan does or does not bind this tenant, in `plan::binding`'s order: `not_enforced` \u2014 the deployment does not enforce plans (`PLANS_ENFORCED` is off), checked first, for every tenant including the default one; `platform_tenant` \u2014 plans are enforced, and this is the platform's own (default) tenant, which no plan limits; `licensed` \u2014 plans are enforced and the tenant holds a perpetual license (`GET /api/v1/licenses`): no limit of its plan applies, and what the plan includes (SAML, SMS, machine identity) is still its plan's; `plan` \u2014 held to its plan. `not_enforced`, `platform_tenant` and `licensed` are the reasons `plans_enforced` is false, and the only way to tell them apart: on the default tenant the boolean is false either way, so this is how an operator whose one tenant is the default reads whether `PLANS_ENFORCED` is on. Absent from a server before 2026-10-03."
           }
         }
       },
@@ -8818,7 +9106,7 @@
               "business",
               null
             ],
-            "description": "**Platform token only.** Puts the tenant on a plan by hand (a comp, an agreement, a test tenant), or `null` to clear it and let the subscription decide. The billing provider never writes this, so an override survives every subscription change. Audited as `tenant.plan_override_set` (warning)."
+            "description": "**Platform token only.** Puts the tenant on a plan by hand (a comp, an agreement, a test tenant), or `null` to clear it and let the subscription decide. The billing provider never writes this, so an override survives every subscription change. Audited as `tenant.plan_override_set` (warning). Refused (409) for a tenant that holds a perpetual license: its override is the license's, and only revoking the license changes it."
           }
         }
       },
@@ -10049,7 +10337,10 @@
           "app.updated",
           "app.deleted",
           "challenge_questions.locked",
-          "challenge_questions.cleared"
+          "challenge_questions.cleared",
+          "saml_sp.created",
+          "saml_sp.updated",
+          "saml_sp.deleted"
         ]
       },
       "WebhookReplayOneResult": {
@@ -10870,11 +11161,12 @@
           "source": {
             "type": "string",
             "enum": [
+              "license",
               "override",
               "subscription",
               "none"
             ],
-            "description": "Why `plan` is what it is, as a question of who pays: `override` (the operator set it), `subscription` (a subscription in force), or `none` (nothing pays, so FREE). Close to `GET /api/v1/plan`'s `source`, which also says `none` for a tenant that has never bought anything; they differ only while a paid plan is recorded with no subscription in force behind it (`/plan` names the column, this names who pays)."
+            "description": "Why `plan` is what it is, as a question of who pays: `license` (a perpetual license: nobody pays, ever), `override` (the operator set it, as a comp), `subscription` (a subscription in force), or `none` (nothing pays, so FREE). Close to `GET /api/v1/plan`'s `source`, which also says `none` for a tenant that has never bought anything; they differ only while a paid plan is recorded with no subscription in force behind it (`/plan` names the column, this names who pays)."
           },
           "override_plan": {
             "type": [
@@ -11769,24 +12061,26 @@
           "source": {
             "type": "string",
             "enum": [
+              "license",
               "override",
               "subscription",
               "none"
             ],
-            "description": "Who decided the plan: `override` (the operator set one), `subscription` (the billing provider put the tenant on a paid plan), or `none` (no override and a subscribed plan of FREE \u2014 nothing decided it, which is what an unpaid tenant is on). The same answer `GET /api/v1/billing`'s `source` gives for a tenant that never paid."
+            "description": "Who decided the plan: `license` (a perpetual license, which the operator granted and which is never billed), `override` (the operator set one, as a comp), `subscription` (the billing provider put the tenant on a paid plan), or `none` (no override and a subscribed plan of FREE \u2014 nothing decided it, which is what an unpaid tenant is on). The same answer `GET /api/v1/billing`'s `source` gives for a tenant that never paid."
           },
           "enforced": {
             "type": "boolean",
-            "description": "Whether this tenant is held to its plan: the deployment enforces plans (`PLANS_ENFORCED`) and the tenant is not the platform's own (the default tenant, which no plan limits). `false`: `entitlements` is the unrestricted set, whatever `plan` says. `plan_binding` says which of the two it is."
+            "description": "Whether this tenant is held to its plan: the deployment enforces plans (`PLANS_ENFORCED`), the tenant is not the platform's own (the default tenant, which no plan limits), and it holds no perpetual license. `false`: `entitlements` is the unrestricted set, whatever `plan` says \u2014 except for a licensed tenant, whose `saml`, `machine_identity`, `sms` and `enhanced_support` are still its plan version's. `plan_binding` says which it is."
           },
           "plan_binding": {
             "type": "string",
             "enum": [
               "plan",
               "not_enforced",
-              "platform_tenant"
+              "platform_tenant",
+              "licensed"
             ],
-            "description": "Why the plan does or does not bind this tenant, in `plan::binding`'s order: `not_enforced` \u2014 the deployment does not enforce plans (`PLANS_ENFORCED` is off), checked first, for every tenant including the default one; `platform_tenant` \u2014 plans are enforced, and this is the platform's own (default) tenant, which no plan limits; `plan` \u2014 held to its plan. `not_enforced` and `platform_tenant` are the two reasons `enforced` is false, and the only way to tell them apart: on the default tenant the boolean is false either way, so this is how an operator whose one tenant is the default reads whether `PLANS_ENFORCED` is on. Absent from a server before 2026-10-03."
+            "description": "Why the plan does or does not bind this tenant, in `plan::binding`'s order: `not_enforced` \u2014 the deployment does not enforce plans (`PLANS_ENFORCED` is off), checked first, for every tenant including the default one; `platform_tenant` \u2014 plans are enforced, and this is the platform's own (default) tenant, which no plan limits; `licensed` \u2014 plans are enforced and the tenant holds a perpetual license (`GET /api/v1/licenses`): no limit of its plan applies, and what the plan includes (SAML, SMS, machine identity) is still its plan's; `plan` \u2014 held to its plan. `not_enforced`, `platform_tenant` and `licensed` are the reasons `enforced` is false, and the only way to tell them apart: on the default tenant the boolean is false either way, so this is how an operator whose one tenant is the default reads whether `PLANS_ENFORCED` is on. Absent from a server before 2026-10-03."
           },
           "entitlements": {
             "type": "object",
@@ -12285,6 +12579,190 @@
           }
         }
       },
+        "PlanLicense": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A perpetual license (migration 0209). Never edited and never deleted.",
+          "required": [
+            "id",
+            "application",
+            "note",
+            "plan",
+            "version_id",
+            "version",
+            "granted_by",
+            "granted_at",
+            "revoked",
+            "tenants"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "application": {
+              "type": "string",
+              "description": "Which of the operator's applications it is for."
+            },
+            "note": {
+              "type": "string",
+              "description": "The operator's note; may be empty."
+            },
+            "plan": {
+              "$ref": "#/components/schemas/Plan"
+            },
+            "version_id": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The version granted (`plan_versions.id`), which the license keeps for good."
+            },
+            "version": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "description": "Its number within its tier."
+            },
+            "granted_by": {
+              "type": "string",
+              "description": "The operator the dashboard named, `the platform token`, or `admin-cli`. Asserted, not proved, as `asserted_operator` is."
+            },
+            "granted_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "revoked": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "by",
+                    "at",
+                    "reason"
+                  ],
+                  "properties": {
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Who revoked it, when and why; `null` while it is in force."
+            },
+            "tenants": {
+              "type": "array",
+              "description": "The tenants under it now. Empty once revoked; each tenant's trail says it held it.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "slug"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "slug": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "PlanLicenseList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "licenses"
+          ],
+          "properties": {
+            "licenses": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PlanLicense"
+              }
+            }
+          }
+        },
+        "LicenseGrantRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "application",
+            "plan",
+            "tenant_ids"
+          ],
+          "properties": {
+            "application": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Which application it is for. No line breaks."
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Optional."
+            },
+            "plan": {
+              "$ref": "#/components/schemas/Plan"
+            },
+            "tenant_ids": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "description": "The tenants to put on it. Repeats count once."
+            }
+          }
+        },
+        "LicenseAddTenantRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tenant_id"
+          ],
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "LicenseRevokeRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Why. Required, and recorded."
+            }
+          }
+        },
       "PlanVersionList": {
         "type": "object",
         "required": [
@@ -12473,7 +12951,7 @@
         }
       },
       "Forbidden": {
-        "description": "`insufficient_scope` or `forbidden` \u2014 the key authenticated, and is not allowed to do this. Branch on `error`; `message` is a sentence for people and is not stable.\n\nEvery operation in this document can return this, for one of these causes:\n\n- **`insufficient_scope`: scope.** The key does not hold the scope this operation requires. A key minted with no scopes at all passes every held-to-what-you-declare check but no strict one (see `TenantApiKeyScope`); one minted with any scope is restricted to exactly those.\n- **`forbidden`: another tenant.** The key tried to act on a tenant other than its own. Only the platform token may name an arbitrary `tenant_id`; a tenant key naming somebody else's is refused here rather than silently rescoped.\n- **`forbidden`: platform token only.** The operation takes no tenant key, whatever its scopes: creating, listing, exporting, deleting or changing the status of tenants, and inviting a tenant's owner; minting, listing, rotating or revoking API keys; reading or setting the per-tenant SAML switches; fleet health; and the quota fields of the tenant PATCH.\n- **`owner_unconfirmed`: `POST /users/invite` from a tenant self-service sign-up made**, none of whose owners has confirmed their email address.\n- **`forbidden`: a refusal of the operation's own**, described with it: deleting the default tenant; and registering or replacing a SAML service provider, assigning a user to one, or minting an identity-provider signing key while the platform has not enabled the tenant as a SAML identity provider or the tenant is not active.\n\nOperations do not all run their checks in the same order, so a request that fails two of them may get either slug. Retrying unchanged does not help: each cause needs a different key, a different request, or an operator's change.",
+        "description": "`insufficient_scope` or `forbidden` \u2014 the key authenticated, and is not allowed to do this. Branch on `error`; `message` is a sentence for people and is not stable.\n\nEvery operation in this document can return this, for one of these causes:\n\n- **`insufficient_scope`: scope.** The key does not hold the scope this operation requires. A key minted with no scopes at all passes every held-to-what-you-declare check but no strict one (see `TenantApiKeyScope`); one minted with any scope is restricted to exactly those.\n- **`forbidden`: another tenant.** The key tried to act on a tenant other than its own. Only the platform token may name an arbitrary `tenant_id`; a tenant key naming somebody else's is refused here rather than silently rescoped.\n- **`forbidden`: platform token only.** The operation takes no tenant key, whatever its scopes: creating, listing, exporting, deleting or changing the status of tenants, and inviting a tenant's owner; minting, listing, rotating or revoking API keys; reading or setting the per-tenant SAML switches; fleet health; granting, listing and revoking perpetual licenses; and the quota and plan-override fields of the tenant PATCH.\n- **`owner_unconfirmed`: `POST /users/invite` from a tenant self-service sign-up made**, none of whose owners has confirmed their email address.\n- **`forbidden`: a refusal of the operation's own**, described with it: deleting the default tenant; and registering or replacing a SAML service provider, assigning a user to one, or minting an identity-provider signing key while the platform has not enabled the tenant as a SAML identity provider or the tenant is not active.\n\nOperations do not all run their checks in the same order, so a request that fails two of them may get either slug. Retrying unchanged does not help: each cause needs a different key, a different request, or an operator's change.",
         "content": {
           "application/json": {
             "schema": {
